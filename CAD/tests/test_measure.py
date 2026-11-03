@@ -1,9 +1,12 @@
 """Tests for ngspice_interface/dut_testbench.py: the metric calculations.
 
 Synthetic data with known answers checks the math of each measurement; the mid-range design checks
-that a real simulation runs end-to-end. Run from CAD/ (the course code builds its paths from os.getcwd()).
+that a real simulation runs end-to-end; four real designs are compared with ngspice's own meas.
+Run from CAD/ (the course code builds its paths from os.getcwd()).
 """
 import os
+import re
+import subprocess
 
 import numpy as np
 import pytest
@@ -26,6 +29,34 @@ for dev in ['p1', 'n1', 'p3', 'n3', 'n4', 'n5']:
     MID_DESIGN['l' + dev] = 1.35e-07
 MID_DESIGN['cap'] = 5.0e-12
 MID_DESIGN['res'] = 5000.0
+
+# real designs for the comparison with ngspice's own measurements; the last two come from a
+# scan of 40 random designs on the TwoStage.yaml grid (seed 0)
+REAL_DESIGNS = {
+    'mid_range': MID_DESIGN,
+    'low_cc': dict(MID_DESIGN, cap=0.5e-12),  # PM ~ 40 deg: non-dominant pole close to the UGBW
+    'high_gain': dict(mp1=12, wp1=1.25e-06, lp1=1.35e-07, mn1=11, wn1=1.0e-06, ln1=1.35e-07,
+                      mp3=13, wp3=3.0e-06, lp3=1.8e-07, mn3=20, wn3=2.5e-07, ln3=9.0e-08,
+                      mn4=25, wn4=1.0e-06, ln4=1.35e-07, mn5=22, wn5=2.0e-06, ln5=2.25e-07,
+                      cap=1.7e-12, res=5100.0),  # gain ~ 1370 V/V, UGBW ~ 49 MHz, PM ~ 70 deg
+    'negative_pm': dict(mp1=7, wp1=2.5e-06, lp1=1.8e-07, mn1=1, wn1=1.25e-06, ln1=2.25e-07,
+                        mp3=14, wp3=2.5e-07, lp3=1.8e-07, mn3=19, wn3=2.75e-06, ln3=4.5e-08,
+                        mn4=3, wn4=2.75e-06, ln4=4.5e-08, mn5=14, wn5=2.5e-07, ln5=9.0e-08,
+                        cap=4.9e-12, res=4200.0),  # gain ~ 450 V/V, PM ~ -55 deg (unstable)
+}
+
+# control block of the reference netlist: an AC sweep with 1000 points/decade (instead of 10) and
+# ngspice's own .meas. "meas ... when" interpolates linearly between the sweep points, so on the dense
+# grid it is (almost) exact. cph() is ngspice's continuous (unwrapped) phase, in degrees here.
+MEAS_CONTROL = """.control
+set units=degrees
+ac dec 1000 1 1T
+meas ac gain find vm(net6) at=1
+meas ac ugbw when vdb(net6)=0 fall=1
+let phase = cph(v(net6))
+meas ac phase_at_ugbw find phase at=ugbw
+.endc
+"""
 
 
 def poles(a0, *pole_freqs):
@@ -211,6 +242,37 @@ def test_mid_range_design_smoke(tmp_path):
     targets = yaml.load(open(YAML_PATH), Loader=yaml.Loader)['targets']
     assert set(metrics) == set(targets)
     assert all(np.isfinite(value) for value in metrics.values())
+
+
+def ngspice_meas_reference(netlist_path):
+    # copy the netlist of the design, swap its control block for MEAS_CONTROL, run ngspice and read the
+    # "name = value" lines that meas prints (ngspice's output is captured here, never printed)
+    with open(netlist_path) as f:
+        text = f.read()
+    text = re.sub(r'\.control.*?\.endc\n', MEAS_CONTROL, text, flags=re.S)
+    meas_path = netlist_path.replace('.cir', '_meas.cir')
+    with open(meas_path, 'w') as f:
+        f.write(text)
+    result = subprocess.run(['ngspice', '-b', meas_path], capture_output=True, text=True)
+    values = dict(re.findall(r'^(\w+)\s*=\s*([-+.\deE]+)', result.stdout, flags=re.M))
+    return {'gain': float(values['gain']), 'ugbw': float(values['ugbw']),
+            'phm': 180.0 + float(values['phase_at_ugbw'])}
+
+
+@pytest.mark.parametrize('name', REAL_DESIGNS)
+def test_measurements_match_ngspice_meas(tmp_path, name):
+    # our gain, UGBW and PM (10 points/decade, log-log interpolation, np.unwrap) against ngspice's own
+    # measurement of the same design on a 100x denser sweep (linear interpolation, cph)
+    dut = DUT(YAML_PATH)
+    dut.output_netlists_folder = dut.output_files_folder = dut.logs_folder = str(tmp_path)
+    netlist_path = dut.create_new_netlist(REAL_DESIGNS[name], process='TT')
+    assert dut.simulate(netlist_path) == 0
+    metrics = dut.measure_metrics()
+    reference = ngspice_meas_reference(netlist_path)
+    if name == 'negative_pm':
+        assert reference['phm'] < 0  # the design still is what its name says
+    for spec in ['gain', 'ugbw', 'phm']:
+        assert metrics[spec] == pytest.approx(reference[spec], rel=0.01), spec
 
 
 @pytest.mark.skipif(not os.path.isfile(REFERENCE_DESIGNS), reason='reference_designs.csv from the TAs not available yet')
