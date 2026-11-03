@@ -10,7 +10,9 @@ from .ngspice_wrapper import NgspiceWrapper
 
 class DUT(NgspiceWrapper):
     def measure_metrics(self):
-        self.parse_outputs()
+        # returns None for a failed simulation (output files missing or empty), like NgspiceWrapper does
+        if not self.parse_outputs():
+            return None
         spec_dict = {}
         # post process raw data
         area_estimator = BPTM45nmAreaEstimator(self.circuit_params, self.circuit_multipliers)
@@ -32,8 +34,9 @@ class DUT(NgspiceWrapper):
         # add these file names in a list
         self.output_files = [tran_fname, ac_fname, dc_fname, noise_fname]
         for file in self.output_files:
-            if not os.path.isfile(file):
-                print(f"{file} doesn't exist")
+            if not os.path.isfile(file) or os.path.getsize(file) == 0:
+                print(f"{file} doesn't exist or is empty")
+                return False
         tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
         ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
         dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
@@ -50,6 +53,7 @@ class DUT(NgspiceWrapper):
         self.current = - dc_raw_outputs[1]
 
         self.noise = noise_raw_outputs[0]
+        return True
     
     def find_dc_gain(self, vout):
         """
@@ -79,6 +83,8 @@ class DUT(NgspiceWrapper):
         """
         TODO: Implement the phase margin (PHM) calculation
         """
+        if self.find_ugbw(freq, vout) == 0.0:
+            return 0.0  # no unity-gain crossing: no phase margin (a valid design that fails the spec)
         pass
     
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
