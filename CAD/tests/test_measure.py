@@ -140,6 +140,16 @@ def test_no_crossing_gives_zero_ugbw_and_pm():
     assert dut.find_phm(FREQ, poles(0.5, 3e3)) == 0.0
 
 
+@pytest.mark.parametrize('n_points', [2, 3])
+def test_ugbw_too_few_ac_points_is_zero_without_exception(n_points):
+    # the cubic spline behind find_ugbw needs 4 points; fewer must give 0, not a scipy error
+    dut = DUT(YAML_PATH)
+    freq = np.array([1e3, 1e6, 1e9])[:n_points]
+    vout = np.array([100.0, 0.1, 0.001])[:n_points] + 0j
+    assert dut.find_ugbw(freq, vout) == 0.0
+    assert dut.find_phm(freq, vout) == 0.0
+
+
 # ---------- slew rate on synthetic transient data ----------
 
 def trapezoid(time, v_low, v_high, t_rise_start, rise_slope, t_fall_start, fall_slope):
@@ -240,7 +250,6 @@ def test_synthetic_files_are_measured(tmp_path):
     assert metrics['noise'] == pytest.approx(1e-3)
 
 
-@pytest.mark.xfail(strict=True, reason='parse_outputs/measure_metrics on main have no NaN check yet (to discuss with Lukas)')
 def test_nan_in_output_is_failed(tmp_path):
     ac = np.column_stack([FREQ, np.real(poles(500, 3e3)), np.imag(poles(500, 3e3))])
     ac[10, 1] = np.nan
@@ -248,11 +257,18 @@ def test_nan_in_output_is_failed(tmp_path):
     assert make_dut(tmp_path, 'TwoStage_nan').measure_metrics() is None
 
 
-@pytest.mark.xfail(strict=True, reason='parse_outputs on main has no shape check yet: IndexError (to discuss with Lukas)')
 def test_too_short_output_is_failed(tmp_path):
     # a transient with a single time point (e.g. ngspice aborted right after the start)
     write_outputs(str(tmp_path), 'TwoStage_short', tran=np.array([[0.0, 0.6]]))
     assert make_dut(tmp_path, 'TwoStage_short').measure_metrics() is None
+
+
+def test_unreadable_output_is_failed(tmp_path):
+    # rows with different numbers of columns: np.genfromtxt raises ValueError, which must become "failed"
+    write_outputs(str(tmp_path), 'TwoStage_garbled')
+    with open(os.path.join(str(tmp_path), 'tran_TwoStage_garbled.csv'), 'w') as f:
+        f.write('header\n0.0 0.6\n5e-8 0.6 0.7\n1e-7 0.6\n')
+    assert make_dut(tmp_path, 'TwoStage_garbled').measure_metrics() is None
 
 
 # ---------- real simulation ----------

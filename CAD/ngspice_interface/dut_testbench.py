@@ -10,7 +10,7 @@ from .ngspice_wrapper import NgspiceWrapper
 
 class DUT(NgspiceWrapper):
     def measure_metrics(self):
-        # returns None for a failed simulation (output files missing or empty), like NgspiceWrapper does
+        # returns None for a failed simulation (output files missing, empty, too short or NaN), like NgspiceWrapper does
         if not self.parse_outputs():
             return None
         spec_dict = {}
@@ -24,6 +24,10 @@ class DUT(NgspiceWrapper):
         spec_dict['slewRate'] = self.find_slew_rate(self.time, self.vout_tran, threshold_low=0.1, threshold_high=0.9, time_unit='us')
         spec_dict['ugbw'] = self.find_ugbw(self.freq, self.vout_complex)
 
+        # a NaN or inf metric means the simulation data was broken: failed simulation
+        for value in spec_dict.values():
+            if not np.isfinite(value):
+                return None
         return spec_dict
     
     def parse_outputs(self):
@@ -37,10 +41,21 @@ class DUT(NgspiceWrapper):
             if not os.path.isfile(file) or os.path.getsize(file) == 0:
                 print(f"{file} doesn't exist or is empty")
                 return False
-        tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
-        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
-        noise_raw_outputs = np.genfromtxt(noise_fname, skip_header=1)
+        try:
+            tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
+            noise_raw_outputs = np.genfromtxt(noise_fname, skip_header=1)
+        except ValueError:
+            print("output files could not be read")
+            return False
+        # expected layout (see the wrdata lines in TwoStage.cir): tran = rows of (time, vout),
+        # ac = rows of (freq, real, imag), dc = one row (v(net4), i(vdd)), noise = one row (onoise_total twice)
+        if (tran_raw_outputs.ndim != 2 or tran_raw_outputs.shape[0] < 2
+                or ac_raw_outputs.ndim != 2 or ac_raw_outputs.shape[0] < 2 or ac_raw_outputs.shape[1] < 3
+                or dc_raw_outputs.size < 2 or noise_raw_outputs.size < 1):
+            print("output files are too short")
+            return False
 
         self.time = tran_raw_outputs[:, 0]
         self.vout_tran = tran_raw_outputs[:, 1]
@@ -53,14 +68,17 @@ class DUT(NgspiceWrapper):
         self.current = - dc_raw_outputs[1]
 
         self.noise = noise_raw_outputs[0]
+
+        for data in [self.time, self.vout_tran, self.freq, self.vout_complex, self.current, self.noise]:
+            if not np.all(np.isfinite(data)):
+                print("output files contain NaN or inf")
+                return False
         return True
     
     def find_dc_gain(self, vout):
         """
-        TODO: Implement the DC gain calculation
-        
-        Hint:
-        Use numpy's abs() function to calculate the magnitude of the complex number at each point.
+        DC gain in V/V (the unit of the spec in TwoStage.yaml): |vout| at the first AC point (1 Hz).
+        The differential AC input is 1 V, so vout is the gain itself.
         """
         return np.abs(vout[0])
         
@@ -73,8 +91,8 @@ class DUT(NgspiceWrapper):
         freq = np.asarray(freq, dtype=float)
         gain = np.abs(vout)
         mask = np.isfinite(freq) & np.isfinite(gain) & (freq > 0) & (gain > 0)
-        if np.count_nonzero(mask) < 2:
-            return 0.0
+        if np.count_nonzero(mask) < 4:
+            return 0.0  # the cubic spline in _get_best_crossing needs at least 4 points
 
         xvec = np.log10(freq[mask])
         yvec = np.log10(gain[mask])
