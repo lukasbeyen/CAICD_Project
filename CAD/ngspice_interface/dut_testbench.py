@@ -94,49 +94,61 @@ class DUT(NgspiceWrapper):
         freq = np.asarray(freq, dtype=float)
         vout = np.asarray(vout)
 
-        real_at_ugbw = np.interp(ugbw, freq, vout.real)
-        imag_at_ugbw = np.interp(ugbw, freq, vout.imag)
-        vout_at_ugbw = real_at_ugbw + 1j * imag_at_ugbw
-        phase_at_ugbw = np.angle(vout_at_ugbw, deg=True)
-        return 180 + phase_at_ugbw
-    
+        # np.angle jumps from -180 to +180 degrees; unwrap removes those jumps so the phase keeps falling
+        # (without it an unstable amp with phase -235 deg would get PM = 180 + 125 = 305 deg)
+        phase = np.degrees(np.unwrap(np.angle(vout)))
+        # read the phase at the UGBW on a log-frequency axis, like the logarithmic AC sweep and find_ugbw
+        phase_at_ugbw = np.interp(np.log10(ugbw), np.log10(freq), phase)
+        return 180.0 + phase_at_ugbw
+
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
-        """Max slew rate (V per time_unit) over all rising and falling edges. `time` is in seconds."""
-        t = np.asarray(time, dtype=float)
-        v = np.asarray(signal, dtype=float)
-        if t.size < 4 or t.shape != v.shape:
+        """
+        Slew rate: speed of the output between 10 % and 90 % of its swing, on the first rising and the
+        first falling edge. Returns the slowest of the two (the spec must hold in both directions),
+        in V/us (time_unit='us') or V/s ('s'). Both edges are kept in self.slew_rate_rise and
+        self.slew_rate_fall. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
+        """
+        time = np.asarray(time, dtype=float)
+        signal = np.asarray(signal, dtype=float)
+        self.slew_rate_rise, self.slew_rate_fall = 0.0, 0.0
+        if time.size < 4 or time.shape != signal.shape:
             return 0.0
+        v_low, v_high = np.min(signal), np.max(signal)
+        if v_high <= v_low:
+            return 0.0  # flat (railed) output: no edge
+        v_10 = v_low + threshold_low * (v_high - v_low)
+        v_90 = v_low + threshold_high * (v_high - v_low)
 
-        vmin, vmax = v.min(), v.max()
-        if vmax <= vmin:
-            return 0.0
-        v10 = vmin + threshold_low * (vmax - vmin)
-        v90 = vmin + threshold_high * (vmax - vmin)
+        t_rise_10 = self._first_crossing_time(time, signal, v_10, rising=True)
+        t_rise_90 = self._first_crossing_time(time, signal, v_90, rising=True, after=t_rise_10)
+        t_fall_90 = self._first_crossing_time(time, signal, v_90, rising=False)
+        t_fall_10 = self._first_crossing_time(time, signal, v_10, rising=False, after=t_fall_90)
 
-        # work in time_unit so brentq's absolute tolerance isn't too coarse
-        factor = {'s': 1, 'ms': 1e-3, 'us': 1e-6, 'ns': 1e-9, 'ps': 1e-12}[time_unit.lower()]
-        t = t / factor
+        # an edge that never gets from 10 % to 90 % (or back) has no slew rate: 0, a failing spec
+        sr_rise, sr_fall = 0.0, 0.0
+        if t_rise_10 is not None and t_rise_90 is not None and t_rise_90 > t_rise_10:
+            sr_rise = (v_90 - v_10) / (t_rise_90 - t_rise_10)
+        if t_fall_90 is not None and t_fall_10 is not None and t_fall_10 > t_fall_90:
+            sr_fall = (v_90 - v_10) / (t_fall_10 - t_fall_90)
 
-        # every crossing of the 10% / 90% levels as (time, level_name, rising)
-        events = []
-        for i in range(len(v) - 1):
-            for name, level in (('low', v10), ('high', v90)):
-                a, b = v[i], v[i + 1]
-                if (a < level <= b) or (a > level >= b):
-                    lo = min(max(i - 1, 0), len(t) - 4)
-                    tc, ok = self._get_best_crossing(t[lo:lo + 4], v[lo:lo + 4], level)
-                    if ok and t[i] <= tc <= t[i + 1]:
-                        events.append((tc, name, b > a))
-        events.sort()
+        to_time_unit = {'s': 1.0, 'us': 1e-6}[time_unit]  # V/s -> V/us
+        self.slew_rate_rise = sr_rise * to_time_unit
+        self.slew_rate_fall = sr_fall * to_time_unit
+        return min(self.slew_rate_rise, self.slew_rate_fall)
 
-        rates = []
-        for (t1, n1, up1), (t2, n2, up2) in zip(events, events[1:]):
-            rising_edge = up1 and up2 and n1 == 'low' and n2 == 'high'
-            falling_edge = (not up1) and (not up2) and n1 == 'high' and n2 == 'low'
-            if (rising_edge or falling_edge) and t2 > t1:
-                rates.append((v90 - v10) / (t2 - t1))
-
-        return max(rates) if rates else 0.0
+    def _first_crossing_time(self, time, signal, level, rising, after=None):
+        """
+        First time (after `after`, if given) at which signal crosses `level` upwards (rising=True) or
+        downwards (rising=False), linearly interpolated between the two samples. None if it never does.
+        """
+        for i in range(len(signal) - 1):
+            if after is not None and time[i + 1] <= after:
+                continue
+            if rising and signal[i] < level <= signal[i + 1]:
+                return np.interp(level, [signal[i], signal[i + 1]], [time[i], time[i + 1]])
+            if not rising and signal[i] > level >= signal[i + 1]:
+                return np.interp(level, [signal[i + 1], signal[i]], [time[i + 1], time[i]])
+        return None
 
     def _get_best_crossing(cls, xvec, yvec, val):
         interp_fun = interp.InterpolatedUnivariateSpline(xvec, yvec)
