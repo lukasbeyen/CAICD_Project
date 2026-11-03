@@ -36,6 +36,14 @@ def test_netlist_has_new_parameters(tmp_path):
     assert 'p045_TT.sp' in text
 
 
+def test_netlist_creates_output_files_folder(tmp_path):
+    # ngspice's wrdata writes the CSVs here but cannot create the folder itself
+    dut = make_dut(tmp_path)
+    dut.output_files_folder = os.path.join(str(tmp_path), 'output_files')
+    dut.create_new_netlist(MID_DESIGN, process='TT')
+    assert os.path.isdir(dut.output_files_folder)
+
+
 def test_simulate_runs_and_writes_log(tmp_path):
     dut = make_dut(tmp_path)
     netlist_path = dut.create_new_netlist(MID_DESIGN, process='TT')

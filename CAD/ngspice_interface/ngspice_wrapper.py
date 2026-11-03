@@ -109,6 +109,7 @@ class NgspiceWrapper(object):
         
         # Open the new netlist and write lines
         os.makedirs(os.path.dirname(new_netlist_path), exist_ok=True)
+        os.makedirs(self.output_files_folder, exist_ok=True)  # ngspice's wrdata cannot create folders
         with open(new_netlist_path, 'w') as output_file:
             output_file.writelines(lines)
         
