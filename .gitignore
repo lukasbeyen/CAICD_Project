@@ -7,3 +7,4 @@ solutions/
 __pycache__/
 *.log
 *.raw
+runs/
