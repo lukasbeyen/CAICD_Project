@@ -10,7 +10,9 @@ from .ngspice_wrapper import NgspiceWrapper
 
 class DUT(NgspiceWrapper):
     def measure_metrics(self):
-        self.parse_outputs()
+        # returns None for a failed simulation (output files missing or empty), like NgspiceWrapper does
+        if not self.parse_outputs():
+            return None
         spec_dict = {}
         # post process raw data
         area_estimator = BPTM45nmAreaEstimator(self.circuit_params, self.circuit_multipliers)
@@ -32,8 +34,9 @@ class DUT(NgspiceWrapper):
         # add these file names in a list
         self.output_files = [tran_fname, ac_fname, dc_fname, noise_fname]
         for file in self.output_files:
-            if not os.path.isfile(file):
-                print(f"{file} doesn't exist")
+            if not os.path.isfile(file) or os.path.getsize(file) == 0:
+                print(f"{file} doesn't exist or is empty")
+                return False
         tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
         ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
         dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
@@ -50,6 +53,7 @@ class DUT(NgspiceWrapper):
         self.current = - dc_raw_outputs[1]
 
         self.noise = noise_raw_outputs[0]
+        return True
     
     def find_dc_gain(self, vout):
         """
@@ -63,16 +67,24 @@ class DUT(NgspiceWrapper):
         
     def find_ugbw(self, freq, vout):
         """
-        TODO: Implement the unity gain bandwidth (UGBW) calculation
+        Unity gain bandwidth: the frequency where the gain magnitude |vout| drops through 1 (0 dB).
         """
-        for i in range(0, np.length(vout) -1 ):
-            if vout[i] == 0:
-                return freq[i]
+        gain = np.abs(vout)
+        for i in range(0, len(gain) - 1):
+            if gain[i] >= 1 and gain[i + 1] < 1:
+                # on a Bode plot (log|A| vs log f) the gain is a straight line between two close points,
+                # so interpolate there: log10|A| = 0 is the unity-gain point
+                log_f = np.interp(0, [np.log10(gain[i + 1]), np.log10(gain[i])],
+                                  [np.log10(freq[i + 1]), np.log10(freq[i])])
+                return 10 ** log_f
+        return 0.0  # |vout| never crosses 1 in the sweep: no unity-gain frequency
     
     def find_phm(self, freq, vout):
         """
         TODO: Implement the phase margin (PHM) calculation
         """
+        if self.find_ugbw(freq, vout) == 0.0:
+            return 0.0  # no unity-gain crossing: no phase margin (a valid design that fails the spec)
         pass
     
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
