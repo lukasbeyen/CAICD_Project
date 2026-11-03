@@ -63,11 +63,15 @@ class DUT(NgspiceWrapper):
         
     def find_ugbw(self, freq, vout):
         """
-        TODO: Implement the unity gain bandwidth (UGBW) calculation
+        Unity gain bandwidth: the frequency where the gain magnitude |vout| drops through 1 (0 dB).
         """
-        for i in range(0, np.length(vout) -1 ):
-            if vout[i] == 0:
-                return freq[i]
+        gain = np.abs(vout)
+        for i in range(0, len(gain) - 1):
+            if gain[i] >= 1 and gain[i + 1] < 1:
+                # the AC sweep is logarithmic, so interpolate linearly in log10(freq) between the two points
+                log_f = np.interp(1, [gain[i + 1], gain[i]], [np.log10(freq[i + 1]), np.log10(freq[i])])
+                return 10 ** log_f
+        return 0.0  # |vout| never crosses 1 in the sweep: no unity-gain frequency
     
     def find_phm(self, freq, vout):
         """
