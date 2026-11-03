@@ -10,7 +10,7 @@ from .ngspice_wrapper import NgspiceWrapper
 
 class DUT(NgspiceWrapper):
     def measure_metrics(self):
-        # returns None for a failed simulation (output files missing or empty), like NgspiceWrapper does
+        # returns None for a failed simulation (output files missing, empty, too short or NaN), like NgspiceWrapper does
         if not self.parse_outputs():
             return None
         spec_dict = {}
@@ -24,6 +24,10 @@ class DUT(NgspiceWrapper):
         spec_dict['slewRate'] = self.find_slew_rate(self.time, self.vout_tran, threshold_low=0.1, threshold_high=0.9, time_unit='us')
         spec_dict['ugbw'] = self.find_ugbw(self.freq, self.vout_complex)
 
+        # a NaN or inf metric means the simulation data was broken: failed simulation
+        for value in spec_dict.values():
+            if not np.isfinite(value):
+                return None
         return spec_dict
     
     def parse_outputs(self):
@@ -37,10 +41,21 @@ class DUT(NgspiceWrapper):
             if not os.path.isfile(file) or os.path.getsize(file) == 0:
                 print(f"{file} doesn't exist or is empty")
                 return False
-        tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
-        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
-        noise_raw_outputs = np.genfromtxt(noise_fname, skip_header=1)
+        try:
+            tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
+            noise_raw_outputs = np.genfromtxt(noise_fname, skip_header=1)
+        except ValueError:
+            print("output files could not be read")
+            return False
+        # expected layout (see the wrdata lines in TwoStage.cir): tran = rows of (time, vout),
+        # ac = rows of (freq, real, imag), dc = one row (v(net4), i(vdd)), noise = one row (onoise_total twice)
+        if (tran_raw_outputs.ndim != 2 or tran_raw_outputs.shape[0] < 2
+                or ac_raw_outputs.ndim != 2 or ac_raw_outputs.shape[0] < 2 or ac_raw_outputs.shape[1] < 3
+                or dc_raw_outputs.size < 2 or noise_raw_outputs.size < 1):
+            print("output files are too short")
+            return False
 
         self.time = tran_raw_outputs[:, 0]
         self.vout_tran = tran_raw_outputs[:, 1]
@@ -53,14 +68,17 @@ class DUT(NgspiceWrapper):
         self.current = - dc_raw_outputs[1]
 
         self.noise = noise_raw_outputs[0]
+
+        for data in [self.time, self.vout_tran, self.freq, self.vout_complex, self.current, self.noise]:
+            if not np.all(np.isfinite(data)):
+                print("output files contain NaN or inf")
+                return False
         return True
     
     def find_dc_gain(self, vout):
         """
-        TODO: Implement the DC gain calculation
-        
-        Hint:
-        Use numpy's abs() function to calculate the magnitude of the complex number at each point.
+        DC gain in V/V (the unit of the spec in TwoStage.yaml): |vout| at the first AC point (1 Hz).
+        The differential AC input is 1 V, so vout is the gain itself.
         """
         return np.abs(vout[0])
         
@@ -81,17 +99,57 @@ class DUT(NgspiceWrapper):
     
     def find_phm(self, freq, vout):
         """
-        TODO: Implement the phase margin (PHM) calculation
+        Phase margin in degrees: 180 + phase of vout at the unity-gain frequency.
         """
-        if self.find_ugbw(freq, vout) == 0.0:
+        ugbw = self.find_ugbw(freq, vout)
+        if ugbw == 0.0:
             return 0.0  # no unity-gain crossing: no phase margin (a valid design that fails the spec)
-        pass
+        # np.angle jumps from -180 to +180 degrees; unwrap removes those jumps so the phase keeps falling
+        phase = np.degrees(np.unwrap(np.angle(vout)))
+        # read the phase at the UGBW on the same log-frequency axis as find_ugbw
+        phase_at_ugbw = np.interp(np.log10(ugbw), np.log10(freq), phase)
+        return 180.0 + phase_at_ugbw
     
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
         """
-        TODO: Implement the slew rate calculation
+        Slew rate: speed of the output between 10 % and 90 % of its swing, on the first rising and the
+        first falling edge. Returns the slowest of the two, in V/us (time_unit='us') or V/s ('s').
+        Both edges are kept in self.slew_rate_rise and self.slew_rate_fall.
         """
-        pass
+        v_low, v_high = np.min(signal), np.max(signal)
+        v_10 = v_low + threshold_low * (v_high - v_low)
+        v_90 = v_low + threshold_high * (v_high - v_low)
+
+        t_rise_10 = self._first_crossing_time(time, signal, v_10, rising=True)
+        t_rise_90 = self._first_crossing_time(time, signal, v_90, rising=True, after=t_rise_10)
+        t_fall_90 = self._first_crossing_time(time, signal, v_90, rising=False)
+        t_fall_10 = self._first_crossing_time(time, signal, v_10, rising=False, after=t_fall_90)
+
+        # an edge that never gets from 10 % to 90 % (or back) has no slew rate: 0, a failing spec
+        sr_rise, sr_fall = 0.0, 0.0
+        if t_rise_10 is not None and t_rise_90 is not None and t_rise_90 > t_rise_10:
+            sr_rise = (v_90 - v_10) / (t_rise_90 - t_rise_10)
+        if t_fall_90 is not None and t_fall_10 is not None and t_fall_10 > t_fall_90:
+            sr_fall = (v_90 - v_10) / (t_fall_10 - t_fall_90)
+
+        to_time_unit = {'s': 1.0, 'us': 1e-6}[time_unit]  # V/s -> V/us
+        self.slew_rate_rise = sr_rise * to_time_unit
+        self.slew_rate_fall = sr_fall * to_time_unit
+        return min(self.slew_rate_rise, self.slew_rate_fall)
+
+    def _first_crossing_time(self, time, signal, level, rising, after=None):
+        """
+        First time (after `after`, if given) at which signal crosses `level` upwards (rising=True) or
+        downwards (rising=False), linearly interpolated between the two samples. None if it never does.
+        """
+        for i in range(len(signal) - 1):
+            if after is not None and time[i + 1] <= after:
+                continue
+            if rising and signal[i] < level <= signal[i + 1]:
+                return np.interp(level, [signal[i], signal[i + 1]], [time[i], time[i + 1]])
+            if not rising and signal[i] > level >= signal[i + 1]:
+                return np.interp(level, [signal[i + 1], signal[i]], [time[i + 1], time[i]])
+        return None
 
     def _get_best_crossing(cls, xvec, yvec, val):
         interp_fun = interp.InterpolatedUnivariateSpline(xvec, yvec)
