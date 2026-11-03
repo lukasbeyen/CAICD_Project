@@ -18,6 +18,7 @@ class NgspiceWrapper(object):
         self.solutions_folder = os.path.join(project_path, 'no_backup', 'solutions')
         self.output_netlists_folder = os.path.join(project_path, 'no_backup', 'output_netlists')
         self.output_files_folder = os.path.join(project_path, 'no_backup', 'output_files')
+        self.logs_folder = os.path.join(project_path, 'no_backup', 'logs')  # the env may point this to runs/<run_id>/logs
         self.param_names = yaml_data['params'].keys()
         self.parameters = {}
         self.read_netlist()
@@ -108,6 +109,7 @@ class NgspiceWrapper(object):
         
         # Open the new netlist and write lines
         os.makedirs(os.path.dirname(new_netlist_path), exist_ok=True)
+        os.makedirs(self.output_files_folder, exist_ok=True)  # ngspice's wrdata cannot create folders
         with open(new_netlist_path, 'w') as output_file:
             output_file.writelines(lines)
         
@@ -115,10 +117,14 @@ class NgspiceWrapper(object):
 
     def simulate(self, netlist_path):
         info = 0 # this means no error occurred
-        command = "ngspice -b %s >/dev/null 2>&1" %netlist_path
-        exit_code = os.system(command)
-        print(exit_code)
-        if (exit_code % 256):
+        # ngspice's own output goes to one log file per netlist, never to the console
+        os.makedirs(self.logs_folder, exist_ok=True)
+        log_path = os.path.join(self.logs_folder, os.path.basename(netlist_path).replace('.cir', '.log'))
+        command = "ngspice -b %s > %s 2>&1" % (netlist_path, log_path)
+        # os.system returns a wait status (exit code * 256), not the exit code itself;
+        # the original "status % 256" therefore missed ngspice's exit(1) on fatal errors
+        exit_code = os.waitstatus_to_exitcode(os.system(command))
+        if exit_code != 0:
             # raise RuntimeError('program {} failed!'.format(command))
             info = 1 # this means an error has occurred
         return info
