@@ -1,2 +1,9 @@
 .venv/
 .cad_env/
+# runtime output of the course code (clean.sh wipes no_backup/ every 100 steps)
+no_backup/
+output_figs/
+solutions/
+__pycache__/
+*.log
+*.raw
