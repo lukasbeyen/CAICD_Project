@@ -116,8 +116,10 @@ class NgspiceWrapper(object):
     def simulate(self, netlist_path):
         info = 0 # this means no error occurred
         command = "ngspice -b %s >/dev/null 2>&1" %netlist_path
-        exit_code = os.system(command)
-        if (exit_code % 256):
+        # os.system returns a wait status (exit code * 256), not the exit code itself;
+        # the original "status % 256" therefore missed ngspice's exit(1) on fatal errors
+        exit_code = os.waitstatus_to_exitcode(os.system(command))
+        if exit_code != 0:
             # raise RuntimeError('program {} failed!'.format(command))
             info = 1 # this means an error has occurred
         return info
