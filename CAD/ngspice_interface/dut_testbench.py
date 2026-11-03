@@ -68,30 +68,75 @@ class DUT(NgspiceWrapper):
     def find_ugbw(self, freq, vout):
         """
         Unity gain bandwidth: the frequency where the gain magnitude |vout| drops through 1 (0 dB).
+        Use the spline-based root finder on the log-log representation to interpolate the exact crossing.
         """
+        freq = np.asarray(freq, dtype=float)
         gain = np.abs(vout)
-        for i in range(0, len(gain) - 1):
-            if gain[i] >= 1 and gain[i + 1] < 1:
-                # on a Bode plot (log|A| vs log f) the gain is a straight line between two close points,
-                # so interpolate there: log10|A| = 0 is the unity-gain point
-                log_f = np.interp(0, [np.log10(gain[i + 1]), np.log10(gain[i])],
-                                  [np.log10(freq[i + 1]), np.log10(freq[i])])
-                return 10 ** log_f
-        return 0.0  # |vout| never crosses 1 in the sweep: no unity-gain frequency
+        mask = np.isfinite(freq) & np.isfinite(gain) & (freq > 0) & (gain > 0)
+        if np.count_nonzero(mask) < 2:
+            return 0.0
+
+        xvec = np.log10(freq[mask])
+        yvec = np.log10(gain[mask])
+        root, ok = self._get_best_crossing(xvec, yvec, 0.0)
+        if not ok:
+            return 0.0
+        return 10 ** root
     
     def find_phm(self, freq, vout):
         """
-        TODO: Implement the phase margin (PHM) calculation
+        Phase margin at the unity-gain frequency.
         """
-        if self.find_ugbw(freq, vout) == 0.0:
-            return 0.0  # no unity-gain crossing: no phase margin (a valid design that fails the spec)
-        pass
+        ugbw = self.find_ugbw(freq, vout)
+        if ugbw == 0.0:
+            return 0.0  # no unity-gain crossing: no phase margin
+
+        freq = np.asarray(freq, dtype=float)
+        vout = np.asarray(vout)
+
+        real_at_ugbw = np.interp(ugbw, freq, vout.real)
+        imag_at_ugbw = np.interp(ugbw, freq, vout.imag)
+        vout_at_ugbw = real_at_ugbw + 1j * imag_at_ugbw
+        phase_at_ugbw = np.angle(vout_at_ugbw, deg=True)
+        return 180 + phase_at_ugbw
     
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
-        """
-        TODO: Implement the slew rate calculation
-        """
-        pass
+        """Max slew rate (V per time_unit) over all rising and falling edges. `time` is in seconds."""
+        t = np.asarray(time, dtype=float)
+        v = np.asarray(signal, dtype=float)
+        if t.size < 4 or t.shape != v.shape:
+            return 0.0
+
+        vmin, vmax = v.min(), v.max()
+        if vmax <= vmin:
+            return 0.0
+        v10 = vmin + threshold_low * (vmax - vmin)
+        v90 = vmin + threshold_high * (vmax - vmin)
+
+        # work in time_unit so brentq's absolute tolerance isn't too coarse
+        factor = {'s': 1, 'ms': 1e-3, 'us': 1e-6, 'ns': 1e-9, 'ps': 1e-12}[time_unit.lower()]
+        t = t / factor
+
+        # every crossing of the 10% / 90% levels as (time, level_name, rising)
+        events = []
+        for i in range(len(v) - 1):
+            for name, level in (('low', v10), ('high', v90)):
+                a, b = v[i], v[i + 1]
+                if (a < level <= b) or (a > level >= b):
+                    lo = min(max(i - 1, 0), len(t) - 4)
+                    tc, ok = self._get_best_crossing(t[lo:lo + 4], v[lo:lo + 4], level)
+                    if ok and t[i] <= tc <= t[i + 1]:
+                        events.append((tc, name, b > a))
+        events.sort()
+
+        rates = []
+        for (t1, n1, up1), (t2, n2, up2) in zip(events, events[1:]):
+            rising_edge = up1 and up2 and n1 == 'low' and n2 == 'high'
+            falling_edge = (not up1) and (not up2) and n1 == 'high' and n2 == 'low'
+            if (rising_edge or falling_edge) and t2 > t1:
+                rates.append((v90 - v10) / (t2 - t1))
+
+        return max(rates) if rates else 0.0
 
     def _get_best_crossing(cls, xvec, yvec, val):
         interp_fun = interp.InterpolatedUnivariateSpline(xvec, yvec)
