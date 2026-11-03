@@ -23,7 +23,9 @@ def test_ugbw_single_pole():
     dut = DUT(YAML_PATH)
     a0, fp = 500.0, 3e3
     exact = fp * np.sqrt(a0**2 - 1)
-    assert abs(dut.find_ugbw(FREQ, single_pole(a0, fp)) - exact) / exact < 0.01
+    # far above the pole |A| falls at exactly -20 dB/dec, a straight line in log-log, so the
+    # log-log interpolation is (almost) exact; linear |A| vs log f was 0.5 % off here
+    assert abs(dut.find_ugbw(FREQ, single_pole(a0, fp)) - exact) / exact < 1e-4
 
 
 def test_ugbw_no_crossing():

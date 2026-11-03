@@ -68,8 +68,10 @@ class DUT(NgspiceWrapper):
         gain = np.abs(vout)
         for i in range(0, len(gain) - 1):
             if gain[i] >= 1 and gain[i + 1] < 1:
-                # the AC sweep is logarithmic, so interpolate linearly in log10(freq) between the two points
-                log_f = np.interp(1, [gain[i + 1], gain[i]], [np.log10(freq[i + 1]), np.log10(freq[i])])
+                # on a Bode plot (log|A| vs log f) the gain is a straight line between two close points,
+                # so interpolate there: log10|A| = 0 is the unity-gain point
+                log_f = np.interp(0, [np.log10(gain[i + 1]), np.log10(gain[i])],
+                                  [np.log10(freq[i + 1]), np.log10(freq[i])])
                 return 10 ** log_f
         return 0.0  # |vout| never crosses 1 in the sweep: no unity-gain frequency
     
