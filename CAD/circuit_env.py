@@ -9,9 +9,11 @@ from utils.plotting import plotLearning, plot_running_maximum
 
 class CircuitEnv(gym.Env):
     PER_LOW, PER_HIGH = -np.inf, +np.inf
-    
+    # hard constraints that must stay BELOW their target; all others (gain, phm, slewRate, ugbw) must reach it
+    UPPER_BOUND_SPECS = ['noise']
+
     def __init__(self, config=None, circuit_name='TwoStage', run_id='rllib_baseline',
-                 success_threshold=0.0, simulator='ngspice'):
+                 success_threshold=0.0, simulator='ngspice', failed_penalty=-6.0, target_weight_when_failing=0.05):
         self.run_id = run_id
         self.max_steps_per_episode = 10
         self.env_steps = 0
@@ -55,6 +57,10 @@ class CircuitEnv(gym.Env):
 
         # spec reward weights
         self.spec_weights = yaml_data['spec_weights']
+        # reward of a failed simulation: below the worst valid FoM (5 specs at -1 and 0.05 * -2 -> about -5.1)
+        self.failed_penalty = failed_penalty
+        # TODO(TA): weight of r_T while specs fail: 0.05 (slides) or the spec_weights of TwoStage.yaml?
+        self.target_weight_when_failing = target_weight_when_failing
 
         self.reward_history = []
         self.score_history = []
@@ -112,23 +118,44 @@ class CircuitEnv(gym.Env):
     
     def normalize_specs(self, spec_dict):
         """
-        TODO: Normalize the specifications in `spec_dict` based on target specifications.
+        Normalize the specifications in `spec_dict` based on target specifications.
 
         This function normalizes the values in `spec_dict` by comparing them to the
-        target specifications stored in `self.dict_targets`. The normalization is 
+        target specifications stored in `self.dict_targets`. The normalization is
         performed using the formula:
-            normalized_value = (spec_value - goal_value) / (spec_value + goal_value) 
-        
+            normalized_value = (spec_value - goal_value) / (spec_value + goal_value)
+        Lower-bound specs (gain, phm, slewRate, ugbw) are clipped to >= 0 first, so every value lies in [-1, 1].
+        A failed simulation (spec_dict None) gets the worst value of every metric.
+
         Args:
             spec_dict (dict): A dictionary containing the specifications to be normalized.
                               The keys should match those in `self.dict_targets`.
-        
+
         Returns:
             dict: A dictionary containing the normalized specifications, with the same keys
                   as `spec_dict`.
         """
-        pass
-    
+        norm_specs = {}
+        for name, goal in self.dict_targets.items():
+            lower_bound = name in self.hard_constraints and name not in self.UPPER_BOUND_SPECS
+            if spec_dict is None:
+                # failed sim: worst case, -1 for a lower-bound spec, +1 for noise, area and current
+                norm_specs[name] = -1.0 if lower_bound else 1.0
+                continue
+            value = spec_dict[name]
+            if lower_bound:
+                value = max(value, 0.0)  # e.g. a negative PM (unstable amp) counts as 0 -> z = -1
+            norm_specs[name] = (value - goal) / (value + goal)
+        return norm_specs
+
+    def observation(self, norm_specs):
+        """
+        The state the agent sees: the normalized hard constraints, then the normalized optimization targets
+        (docs/fom.md), as a float32 array.
+        """
+        names = list(self.hard_constraints) + list(self.optimization_targets)
+        return np.array([norm_specs[name] for name in names], dtype=np.float32)
+
     def evaluate(self, action):
         self.param_values = self.action_refine(action)
         self.real_specs = self.simulate(self.param_values)
@@ -188,7 +215,7 @@ class CircuitEnv(gym.Env):
     
     def reward_computation(self, norm_specs):
         """
-        TODO: Compute the reward based on normalized specifications and hard constraints.
+        Compute the reward (FoM, docs/fom.md) based on normalized specifications and hard constraints.
 
         Args:
             norm_specs (dict): A dictionary containing normalized specifications.
@@ -206,7 +233,29 @@ class CircuitEnv(gym.Env):
             - If not, add weighted reward components of the optimization targets.
         4. Return the computed reward and the hard_satisfied flag.
         """
-        pass
+        reward = 0.0
+        hard_satisfied = False
+        # hard constraints (r_H): only a violated spec costs reward, a spec that is beaten earns nothing
+        for name in self.hard_constraints:
+            z = norm_specs[name]
+            if name in self.UPPER_BOUND_SPECS:
+                r = -max(z, 0.0)  # noise above its target: z > 0 -> negative reward
+            else:
+                r = min(z, 0.0)  # e.g. gain below its target: z < 0 -> negative reward
+            reward += self.spec_weights[name] * r
+        # optimization targets (r_T): less area and current is always better, r_t = -o_t
+        r_targets = 0.0
+        for name in self.optimization_targets:
+            r_targets += -self.spec_weights[name] * norm_specs[name]
+
+        if reward >= self.success_threshold:
+            # all specs met (r_H = 0): bonus, then optimize area and current
+            hard_satisfied = True
+            reward = 0.3 + r_targets
+        else:
+            # specs not met: mostly push towards the specs, area and current only weakly
+            reward = reward + self.target_weight_when_failing * r_targets
+        return reward, hard_satisfied
 
 
 if __name__ == '__main__':
