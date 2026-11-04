@@ -470,10 +470,9 @@ def test_reference_slew_rate_method(tmp_path, design):
     assert metrics['slewRate'] == pytest.approx(ref['spec_slewRate'], rel=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason='the testbench prints every 50 ns (TAs: ~1 ns): fast rising edges read low')
 @pytest.mark.parametrize('design', REFERENCE_DESIGNS)
 def test_reference_slew_rate_testbench(tmp_path, design):
-    # our slewRate metric as the env sees it (strict: must be updated once the time resolution is fixed)
+    # our slewRate metric as the env sees it: the testbench (.options trtol=0.1) resolves the edges, within 1 %
     ref = REFERENCE_DESIGNS[design]
     dut, metrics = simulate_reference(tmp_path, ref)
     assert metrics['slewRate'] == pytest.approx(ref['spec_slewRate'], rel=0.01)

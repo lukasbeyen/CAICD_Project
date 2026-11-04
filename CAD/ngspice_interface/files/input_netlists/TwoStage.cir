@@ -46,6 +46,14 @@ CL net6 0 {cload}
 * set temperature
 .temp {temp_pvt}
 
+* transient step control. With ngspice's default (trtol=7) the fast rising edge of the output falls between the
+* 50 ns steps, and the measured slew rate was up to 72 % too low. trtol=0.1 makes the local-truncation-error
+* control stricter: small steps only where the waveform changes fast (the edges), still 50 ns where it is flat.
+* The slew rate is then within 0.6 % of a 0.1 ns simulation, at ~0.2 s instead of ~0.12 s per simulation
+* (~ +6 min per 5000 simulations). It only acts on the transient: gain, UGBW, PM, noise, current and area are
+* unchanged (checked on the 5 reference designs and on random designs).
+.options trtol=0.1
+
 .control
 run
 set units=degrees
