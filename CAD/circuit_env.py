@@ -64,10 +64,21 @@ class CircuitEnv(gym.Env):
     
     def action_refine(self, action):
         """
-        TODO: Implement a function that converts normalized actions of range [-1, 1] to actual parameter values.
-        
+        Convert a normalized action in [-1, 1] (one value per parameter, in TwoStage.yaml order) to real
+        parameter values: linear mapping -1 -> min, +1 -> max, then snapped to the nearest grid step of the YAML.
+        The multipliers m are integers.
         """
-        pass
+        action = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)  # exploration noise can push past +-1
+        params = {}
+        for a, (name, r) in zip(action, self.param_ranges.items(), strict=True):
+            value = r['min'] + (a + 1) / 2 * (r['max'] - r['min'])
+            n = round((value - r['min']) / r['step'])  # index of the nearest grid point
+            value = r['min'] + n * r['step']
+            if name.startswith('m'):
+                params[name] = int(round(value))
+            else:
+                params[name] = float(f'{value:.10g}')  # 1.25e-06 instead of 1.2499999999999999e-06
+        return params
     
     def simulate(self, params):
         """
