@@ -188,18 +188,18 @@ class CircuitEnv(gym.Env):
         """
         Append the current simulation to runs/<run_id>/designs.csv: one row per ngspice run (step 0 = reset).
         Metrics are the raw measured values (empty for a failed sim), norm_* the values the agent sees.
+        timeout marks the failed sims that were stopped by the simulation timeout (so they can be counted).
         """
         row = {'sim': self.counter, 'episode': self.episode, 'step': self.episode_steps,
                'netlist': os.path.basename(self.last_netlist_path), 'temp': self.pvt_corner['temp']}
         row.update(self.param_values)
         for name in self.dict_targets:
             row[name] = '' if self.failed else self.real_specs[name]
-        row['slew_rate_rise'] = '' if self.failed else self.simulation_engine.slew_rate_rise
-        row['slew_rate_fall'] = '' if self.failed else self.simulation_engine.slew_rate_fall
         for name in self.dict_targets:
             row['norm_' + name] = self.cur_norm_specs[name]
         row['reward'] = self.reward
         row['failed'] = self.failed
+        row['timeout'] = self.simulation_engine.timed_out
         row['hard_satisfied'] = self.hard_satisfied
 
         os.makedirs(self.run_folder, exist_ok=True)
@@ -311,8 +311,8 @@ class CircuitEnv(gym.Env):
         done = self.episode_steps >= self.max_steps_per_episode
         if done:
             self.score_history.append(self.score)  # one score per episode, for plotLearning
-        info = {'hard_satisfied': self.hard_satisfied, 'failed': self.failed, 'specs': self.real_specs,
-                'sim': self.counter}
+        info = {'hard_satisfied': self.hard_satisfied, 'failed': self.failed,
+                'timeout': self.simulation_engine.timed_out, 'specs': self.real_specs, 'sim': self.counter}
         return ob, self.reward, done, info
     
     def reward_computation(self, norm_specs):
