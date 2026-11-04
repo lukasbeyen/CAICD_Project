@@ -123,53 +123,49 @@ class DUT(NgspiceWrapper):
 
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us', vdd=None):
         """
-        Slew rate of the RISING edge, as in the TAs' reference designs: speed of the output between 10 % and 90 %
-        of its swing on the first rising edge, with the crossing times linearly interpolated between the two
-        samples around them (the same as ngspice's meas). In V/us (time_unit='us') or V/s ('s'), also kept in
-        self.slew_rate_rise. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
-        The 90 % level is capped at threshold_high * vdd and the 10 % level floored at threshold_low * vdd
-        (vdd = supply voltage in V, required): a glitch above VDD or a kick below 0 V would otherwise move the
-        levels away from the real edge. The levels used are kept in self.slew_rate_v10 and self.slew_rate_v90.
+        Slew rate of the first RISING edge of the output (the TAs' definition), in V/us (time_unit='us') or V/s ('s').
+        Input: the transient, time in s and signal in V, and vdd, the supply voltage of the simulation in V (required).
+
+        1. Levels: v_10 and v_90 at 10 % and 90 % of the output swing (minimum to maximum of the signal), but never
+           outside 10 % ... 90 % of VDD. A glitch above VDD would push v_90 up, and the kick below 0 V when the input
+           steps up (feed-forward through Cc) would pull v_10 down: both move the levels away from the real edge.
+        2. Crossing times: t_10 = first time the output rises through v_10, t_90 = the next time it rises through
+           v_90, each linearly interpolated between the two samples around it (as ngspice's meas does).
+        3. Slew rate = (v_90 - v_10) / (t_90 - t_10).
+        Returns 0.0, never an exception, if there is no rising edge to measure: too few samples, mismatched arrays,
+        a flat output or no room between the levels, or an edge that never reaches v_90.
+        The levels used are kept in self.slew_rate_levels = (v_10, v_90).
         """
         if vdd is None:
-            raise ValueError('find_slew_rate needs vdd (the supply voltage of the simulation) to cap the 90 % level')
+            raise ValueError('find_slew_rate needs vdd, the supply voltage of the simulation, for its level limits')
         time = np.asarray(time, dtype=float)
         signal = np.asarray(signal, dtype=float)
-        self.slew_rate_rise = 0.0
-        self.slew_rate_v10, self.slew_rate_v90 = None, None
+        self.slew_rate_levels = None
         if time.size < 4 or time.shape != signal.shape:
             return 0.0
-        v_low, v_high = np.min(signal), np.max(signal)
-        if v_high <= v_low:
-            return 0.0  # flat (railed) output: no edge
-        v_10 = v_low + threshold_low * (v_high - v_low)
-        v_90 = v_low + threshold_high * (v_high - v_low)
-        # hard limits: a glitch above the real swing must not move the 90 % level above threshold_high * VDD,
-        # a kick below ground must not move the 10 % level below threshold_low * VDD
-        v_90 = min(v_90, threshold_high * vdd)
-        v_10 = max(v_10, threshold_low * vdd)
-        self.slew_rate_v10, self.slew_rate_v90 = v_10, v_90
-        if v_90 <= v_10:
-            return 0.0  # degenerate swing (e.g. the whole output sits above the cap or below the floor): no edge
 
-        t_10 = self._first_rising_crossing(time, signal, v_10)
-        t_90 = self._first_rising_crossing(time, signal, v_90, after=t_10)
-        if t_10 is None or t_90 is None or t_90 <= t_10:
-            return 0.0  # the output never gets from 10 % to 90 %: no slew rate, a failing spec
+        v_low, v_high = np.min(signal), np.max(signal)
+        v_10 = max(v_low + threshold_low * (v_high - v_low), threshold_low * vdd)
+        v_90 = min(v_low + threshold_high * (v_high - v_low), threshold_high * vdd)
+        self.slew_rate_levels = (v_10, v_90)
+        if v_90 <= v_10:
+            return 0.0  # a flat output, or a swing entirely above 90 % / below 10 % of VDD: no edge
+
+        t_10 = self._rising_crossing_time(time, signal, v_10)
+        t_90 = None if t_10 is None else self._rising_crossing_time(time, signal, v_90, after=t_10)
+        if t_90 is None:
+            return 0.0  # the output never completes a rising edge: a failing spec, not a broken simulation
 
         to_time_unit = {'s': 1.0, 'us': 1e-6}[time_unit]  # V/s -> V/us
-        self.slew_rate_rise = (v_90 - v_10) / (t_90 - t_10) * to_time_unit
-        return self.slew_rate_rise
+        return (v_90 - v_10) / (t_90 - t_10) * to_time_unit
 
-    def _first_rising_crossing(self, time, signal, level, after=None):
+    def _rising_crossing_time(self, time, signal, level, after=-np.inf):
         """
-        First time (after `after`, if given) at which signal crosses `level` upwards, linearly interpolated
-        between the two samples around the crossing. None if it never does.
+        First time after `after` at which the signal rises through `level`, linearly interpolated between the
+        two samples around the crossing. None if it never does.
         """
         for i in range(len(signal) - 1):
-            if after is not None and time[i + 1] <= after:
-                continue
-            if signal[i] < level <= signal[i + 1]:
+            if time[i + 1] > after and signal[i] < level <= signal[i + 1]:
                 return np.interp(level, [signal[i], signal[i + 1]], [time[i], time[i + 1]])
         return None
 
