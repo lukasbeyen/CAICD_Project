@@ -72,7 +72,8 @@ class CircuitEnv(gym.Env):
         self.plot_every = 100  # update the plots every 100 simulations (and once more in finalize())
 
         self.counter = 0  # number of ngspice simulations (reset + step): the 5000-simulation budget
-        # passed to every netlist; the netlist's own default would be 25 degC (TODO TA: 25 or 27 degC?)
+        # passed to every netlist (the netlist's own default is 25 degC); 27 degC confirmed by the TAs: some specs
+        # (e.g. gain, GBW) of the reference designs only pass at 27 degC
         self.pvt_corner = {'process': 'TT', 'voltage': 1.2, 'temp': 27}
 
         # every run gets its own folder: designs.csv, ngspice logs, netlists of feasible designs

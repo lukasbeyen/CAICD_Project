@@ -6,8 +6,8 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 `circuit_env.py` `reward_computation`.)
 
 ## Status
-**Where we are:** milestone 1 on `main` (`f1ee5b1`). Milestone 2 in **PR #6** (`feat/env`, pushed, Lukas reviews, not
-merged). Next: milestone 3 (TD3). Deadline: Sun 8 Nov 2026, 23:59.
+**Where we are:** milestone 1 on `main` (`efe150e` = state of PR #5). Milestone 2 on branch `feat/env` only (merged as
+PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3). Deadline: Sun 8 Nov 2026, 23:59.
 
 **Milestone 1 — simulator interface** (PDF §1)
 - ✅ 1.0 ngspice wrapper: ngspice from PATH, real exit code, log files, output folder, 20 s timeout
@@ -17,7 +17,7 @@ merged). Next: milestone 3 (TD3). Deadline: Sun 8 Nov 2026, 23:59.
 - ✅ 1.4 unit tests `test_measure.py` + `test_wrapper.py`, incl. the TAs' `references.csv` (all 7 metrics within 1 %)
 - ⬜ 1.R report section (material below: "For the report")
 
-**Milestone 2 — circuit environment** (PDF §2) — PR #6
+**Milestone 2 — circuit environment** (PDF §2) — on `feat/env` (not on main)
 - ✅ 2.1 `action_refine` (the TAs' mapping; reproduces all reference actions → sizes)
 - ✅ 2.2 `simulate` (PVT corner, counter, failed sims)
 - ✅ 2.3 `normalize_specs` (with clipping), `observation`, `reward_computation` (FoM of `docs/fom.md`)
@@ -51,11 +51,20 @@ merged). Next: milestone 3 (TD3). Deadline: Sun 8 Nov 2026, 23:59.
    YAML maximum is never reached (L = 225 nm unreachable, 180 nm only at a = +1, W ≤ 2.5 µm, Cc ≤ 9.8 pF). Intended,
    or may we fix it?
 2. **Milestone 4:** Antigravity CLI only, or may we also call Gemini through google-genai?
-3. **Slew-rate levels:** do you take the 10–90 % swing from the min/max of the whole 30 µs transient? A design whose
-   output kicks above VDD when the input falls (Cc feed-forward) then gets a far too low slew rate. We limit the levels
-   to 10 %…90 % of VDD, which removes that.
-4. **Please confirm** (both already follow from `references.csv`; then the two `TODO(TA)` comments in
-   `circuit_env.py` l.65 and l.75 can go): the weight 0.05 on r_T while specs fail, and 27 °C as the simulation temperature.
+3. **Please confirm** the weight 0.05 on r_T while specs fail. It already follows from `references.csv`; once
+   confirmed, the `TODO(TA)` comment in `circuit_env.py` l.65 can go.
+
+**Answered by the TAs**
+- **Temperature 27 °C:** the TAs said that some specs (e.g. gain and GBW) only pass at 27 °C, so it's normal that the
+  references only match there. (The `TODO TA` comment in `circuit_env.py` l.75 is replaced by this note.)
+- **Slew rate:** in their references the TAs took the **average slew rate over the edges**. Limiting the 10–90 %
+  levels to a percentage of VDD (our 10 %…90 % of VDD limits) **is allowed**.
+  - Our check on the 5 references: their value is the average over the **rising** edges.
+  - The three rising edges in 30 µs are identical to within 0.3 %, so our first rising edge gives the same number
+    (all within 1 %).
+  - Averaging rising and falling edges together would *not* match (Design 1: 46 V/µs instead of their 72 V/µs, because
+    its falling edge is only 20 V/µs).
+  - So no code change is needed.
 
 **Answered by `references.csv`** (5 designs: params, actions, specs, normalized values, reward)
 - Temperature: the references match at **27 °C** (at the netlist default 25 °C the gain is up to 8 % off).
@@ -77,31 +86,63 @@ merged). Next: milestone 3 (TD3). Deadline: Sun 8 Nov 2026, 23:59.
 ---
 
 ## Changes to the course code
-What we changed in files that came with the course (`CAD/` as handed out), and why. "TODO filled" = the assignment.
+This section covers what we changed in the files that came with the course, and why. Filling in the TODOs is the
+assignment itself. Everything else below is a fix or an addition we needed along the way.
 
-| file | change | why | where |
-|---|---|---|---|
-| `ngspice_interface/ngspice_wrapper.py` `simulate()` | ngspice from PATH instead of `/users/micas/.../ngspice` | the path only exists on the student servers | main |
-| | `os.system` + `status % 256` → `subprocess.run([...]).returncode` | `os.system` returns exit code × 256, so `% 256` was always 0: ngspice errors were never detected | main (PR #2, #5) |
-| | output to `no_backup/logs/<netlist>.log` (`logs_folder`) instead of `/dev/null` | failed sims can be traced; the env points it to `runs/<run_id>/logs` | main |
-| | **20 s timeout** (`sim_timeout`), kills ngspice, sets `timed_out`, counts as failed | a few unstable designs make ngspice crawl (68 s default, > 10 min with trtol=0.1) | main (PR #5) |
-| `ngspice_wrapper.py` `create_new_netlist()` | `os.makedirs(output_files_folder)` | `wrdata` can't create folders: on a fresh clone every sim failed | main |
-| `files/input_netlists/TwoStage.cir` | the 4 `wrdata` lines + the `noise` analysis (TODO filled), column comments | the results must reach Python | main |
-| | **`.options trtol=0.1`** (approved by Brent) | the slew-rate edge fell between the 50 ns steps (−72 %); now within 0.6 %, other metrics identical | main (PR #5) |
-| `files/yaml_files/TwoStage.yaml` | targets slewRate 15 → **30**, ugbw 1e6 → **1e8** (Lukas) | the TAs' version; reproduces their normalized values | main |
-| `ngspice_interface/dut_testbench.py` | TODOs filled: `find_dc_gain`, `find_ugbw` (Lukas's spline), `find_phm`, `find_slew_rate` | the assignment | main |
-| | `parse_outputs`/`measure_metrics`: unreadable/short/NaN output → `None` | a broken sim must not crash a 5000-sim run or put NaN in the reward | main (PR #2, #4) |
-| | `find_slew_rate(..., vdd=None)`: extra argument; new helper `_rising_crossing_time` | VDD limits on the levels (Cc kick) | main (PR #5) |
-| `utils/___init__.py` | renamed `utils/__init__.py` | three underscores: a typo | main |
-| `.gitignore` | `no_backup/`, `output_figs/`, `solutions/`, `runs/`, `__pycache__/`, `*.log`, `*.raw`, `*.pyc`; the 8 committed `.pyc` files untracked | they blocked `git pull` | main (PR #4, Lukas) |
-| `circuit_env.py` | TODOs filled: `action_refine`, `simulate`, `normalize_specs`, `reset`, `step`, `reward_computation` | the assignment | PR #6 |
-| | constructor: + `failed_penalty=-6.0`, `target_weight_when_failing=0.05` (defaults, course call unchanged) | penalty and weight explicit and testable | PR #6 |
-| | `evaluate()` extended (reward, logging, feasible copy, plots); new `observation`, `log_design`, `save_feasible_design`, `plot`, `finalize` | every simulation logged, feasible netlists kept before `clean.sh` deletes them, plots every 100 sims | PR #6 |
-| | `pvt_corner` passed to every netlist (TT, 1.2 V, 27 °C); `self.counter` = every ngspice run; `run_folder` | the references use 27 °C; the 5000-sim budget counts resets too | PR #6 |
-| **not changed** | `td3/agent.py`, `td3/buffer.py`, `td3_runner.py` (milestone 3), `utils/plotting.py`, `utils/saving.py`, `clean.sh`, `area_estimation.py`, spice models, the env's observation/action spaces and its 4-value API | | |
+**The simulator wrapper (`ngspice_wrapper.py`)**
+- **Finding ngspice.** The course code called ngspice from a fixed path that only exists on the university servers. We
+  call it from the PATH instead.
+- **Detecting errors.** The course code ran ngspice with `os.system` and checked the result with `status % 256`. That
+  check was always 0, because `os.system` returns the exit code multiplied by 256. So an ngspice error was never
+  noticed. We now use `subprocess.run`, which gives the real exit code.
+- **Log files.** ngspice's output went to `/dev/null`. It now goes to a log file per simulation, so we can see why a
+  simulation failed. During a training run these logs go to the run folder.
+- **Timeout.** A few unstable designs make ngspice run for minutes instead of 0.2 s. After 20 s ngspice is now stopped
+  and the simulation counts as failed.
+- **Output folder.** ngspice's `wrdata` can't create a missing folder, so on a fresh clone every simulation failed. The
+  wrapper now creates the folder first.
 
-**Added (ours):** `CAD/tests/` (`conftest.py`, `test_wrapper.py`, `test_measure.py`, `test_env.py`), `CAD/references.csv`
-(the TAs' file), `CAD/analysis/sr_investigation.py`.
+**The testbench netlist (`TwoStage.cir`)**
+- **Writing the results.** We filled in the TODO: four `wrdata` lines write the transient, AC, DC and noise results to
+  CSV files that Python reads.
+- **Step control.** We added `.options trtol=0.1`, which makes ngspice take small time steps on the fast output edges.
+  With the original 50 ns steps the slew rate read up to 72 % too low; now it's within 0.6 %. The other metrics don't
+  change at all.
+
+**The specifications (`TwoStage.yaml`)**
+- Lukas updated two targets to the TAs' version: slew rate 15 → 30 V/µs and UGBW 1 MHz → 100 MHz. With these, we
+  reproduce the TAs' normalized values exactly.
+
+**The measurements (`dut_testbench.py`)**
+- **The four TODO functions:** gain, unity-gain frequency (Lukas's spline version), phase margin and slew rate.
+- **Broken data.** A missing, empty, unreadable, too short or NaN result now marks the simulation as failed, instead of
+  crashing a 5000-simulation run or putting NaN into the reward.
+- **Slew rate.** `find_slew_rate` gets one extra argument, the supply voltage, plus a small helper function. It keeps
+  the measurement levels between 10 % and 90 % of VDD. The TAs confirmed that this is allowed.
+
+**Small fixes**
+- `utils/___init__.py` had three underscores (a typo) and is now `utils/__init__.py`.
+- Lukas extended `.gitignore` with the output folders and Python cache files, and the cache files that were committed
+  by accident are removed (they blocked `git pull`).
+
+**The environment (`circuit_env.py`), only on `feat/env`**
+- We filled in the six TODO methods: action → sizing, simulate, normalize, reset, step and reward.
+- The constructor gets two extra settings with default values, so the course's call still works: the penalty for a
+  failed simulation (−6) and the weight of the area/current term while specs fail (0.05).
+- `evaluate()` now also computes the reward, logs every simulation and keeps the netlists of designs that meet all
+  specs. We added a few helper methods for this, and `finalize()` for the end of a run.
+- Every simulation is run at the env's PVT corner (TT, 1.2 V, 27 °C), and `self.counter` counts every simulation,
+  towards the 5000 budget.
+
+**Deliberately unchanged**
+- the TD3 files (`td3/agent.py`, `td3/buffer.py`, `td3_runner.py`, for milestone 3);
+- the plotting and saving utilities, `clean.sh`, the area estimator and the spice models;
+- the env's observation and action spaces and its 4-value `step()` API.
+
+**Added by us:**
+- the tests in `CAD/tests/`;
+- the TAs' `CAD/references.csv`;
+- the slew-rate investigation script `CAD/analysis/sr_investigation.py`.
 
 ---
 
@@ -162,6 +203,77 @@ What we changed in files that came with the course (`CAD/` as handed out), and w
 - **Wrapper:** parameters in the netlist, output folder created, log written, ngspice error detected, timeout → failed.
 
 ---
+
+## What we did for milestone 2, in plain words (branch `feat/env`)
+Milestone 2 asks for the "environment": the piece between the TD3 agent and the simulator. The agent says "try this
+design", and the environment turns that into transistor sizes, simulates it, and answers with a score (the reward)
+and a description of how the design did (the state). The course gave the file `circuit_env.py` with empty methods. We
+filled them in one at a time, with one commit per step, and then wrote a test file.
+
+**Step 1: from the agent's numbers to transistor sizes** (`action_refine`, commits `0d64d5a`, then `67b60db`)
+- The agent outputs 20 numbers between −1 and +1, one per design parameter (6 multipliers, 6 widths, 6 lengths, Cc, Rc).
+- Each number has to become a value on the parameter's grid in `TwoStage.yaml`, e.g. Cc from 0.1 to 10 pF in steps of
+  0.1 pF.
+- First we wrote a straightforward linear mapping (−1 → minimum, +1 → maximum, rounded to the nearest grid point).
+- Then we compared it with the TAs' `references.csv`, which lists for 5 designs both the agent's numbers and the
+  resulting sizes. Our mapping reproduced none of the 100 pairs. We worked out the TAs' formula, which rounds down and
+  stops one grid step short of the maximum, and switched to it. Now all 100 pairs match exactly.
+- We chose the TAs' version so that our results compare fairly with their reference designs and their baseline agent.
+- The side effect: the largest value in the YAML can never be chosen (e.g. L = 225 nm). That is an open TA question.
+
+**Step 2: simulating one design** (`simulate`, commit `c1e7479`)
+- The sizes are written into a fresh copy of the netlist and ngspice is run once.
+- The environment always simulates at the same conditions: typical process, 1.2 V supply and 27 °C. We first checked
+  that the temperature setting really reaches ngspice. The TAs confirmed 27 °C.
+- A counter goes up for every simulation, because the assignment's budget is 5000 *simulations*.
+- If anything goes wrong (an ngspice error, the 20 s timeout, broken output, or impossible values such as zero current),
+  the simulation is marked as failed instead of crashing the run.
+
+**Step 3: turning the measurements into a state and a reward** (`normalize_specs`, `reward_computation`, commit
+`8846d63`)
+- The 7 measured values (gain, noise, phase margin, slew rate, UGBW, area, current) differ hugely in size: area is
+  around 1e-9 m², UGBW around 1e8 Hz. A neural network can't handle that well.
+- So each value is replaced by its relative distance to the target, (value − target)/(value + target). That is always
+  between −1 and +1, and 0 means "exactly on target". These 7 numbers are the state the agent sees.
+- Specs that must be *at least* something (gain, PM, slew rate, UGBW) are first clipped at 0. A negative phase margin
+  would otherwise break the formula.
+- The reward is the course's figure of merit:
+  - **While specs fail:** only the failing specs cost points (beating a spec earns nothing), plus a small push (×0.05)
+    towards less area and current.
+  - **Once all specs pass:** a bonus of 0.3, plus the full area/current term.
+- **A failed simulation** gets −6, worse than any real design can score. That way the agent never learns that breaking
+  the simulator is a way out.
+
+**Step 4: episodes, logging and plots** (`reset`, `step`, commit `85587d5`, then `084907d`)
+- **An episode:** `reset()` simulates one random design as a starting point, then the agent gets 10 tries (`step()`).
+- **The log:** every simulation, the random reset designs included, is written as one row in
+  `runs/<run_id>/designs.csv`. The row holds all 20 sizes, all 7 measurements, the normalized values, the reward, and
+  whether the simulation failed or timed out.
+- **Designs that meet all specs:** their netlist is copied to the run folder, because `clean.sh` regularly wipes the
+  scratch folder and the final submission needs these netlists.
+- **The course's plots:** they were redrawn after every step. One plot takes as long as a whole simulation, so we now
+  redraw them every 100 simulations and once at the end (`finalize()`, which also draws the Pareto plot).
+- **The timeout:** after the slew-rate work added the 20 s timeout, the log got its own "timeout" column, and the two
+  old slew-rate columns (rising/falling edge) were dropped.
+
+**Step 5: the test file** (`tests/test_env.py`, commit `9ca85e0`)
+26 tests that check the environment against numbers we know independently:
+- The TAs' reference actions give exactly the TAs' sizes, and their measurements give exactly their normalized values
+  and reward.
+- Hand-calculated examples from the FoM definition, e.g. a gain of 100 instead of 200 gives a reward of exactly −1/3.
+- Failed simulations always get −6 and the worst-case state, whatever the cause.
+- The bookkeeping: the counter, the CSV rows, the 10-step episode, the kept netlists and reproducible random starts.
+- gymnasium's own environment checker passes.
+- Most tests use a fake simulator and run in about 1.5 s. One test runs the real ngspice.
+
+**What happened with the PR**
+- Milestone 2 went to Lukas for review as PR #6.
+- Brent merged it and then reverted it again (PR #7), so `main` doesn't have milestone 2 yet.
+- It's complete on `feat/env`, and all 81 tests pass there.
+
+**What we deliberately did not change**
+- The observation space stays as the course defined it.
+- `step()` keeps the course's 4-value return, because `td3_runner.py` and the TAs' baseline expect that.
 
 ## How milestone 2 works (`circuit_env.py`, PR #6)
 - **Action** (`action_refine` l.82): the actor outputs 20 numbers in [−1, 1] (tanh), one per parameter in YAML order,
@@ -392,7 +504,7 @@ a = +1 isn't rare in training: the actor's tanh saturates and the exploration no
 | 4 Nov | TA `references.csv` (Brent); reference tests; conftest (tests run from the root); broken-data checks restored after `2ceb44d`; `.pyc` untracked | PR #4 → main (PR #3 closed as superseded) |
 | 4 Nov | Lukas: YAML targets SR 30 / UGBW 1e8 (`2ceb44d`), `.pyc` in `.gitignore` (`d1de3fd`) | main |
 | 5 Nov | slew rate: rising edge, VDD-limited levels, `trtol=0.1`, 20 s timeout, investigation script | PR #5 → main `f1ee5b1` |
-| 5 Nov | milestone 2: circuit environment + `test_env.py` | **PR #6 (open, Lukas reviews)** |
+| 5 Nov | milestone 2: circuit environment + `test_env.py` | PR #6, merged and reverted again (PR #7); lives on `feat/env` |
 
 Remote branches kept (never deleted): `brent` (old, superseded), `fix/dut-testbench`, `fix/slew-rate-phm`,
 `fix/measurements-sync`, `fix/m1-final`, `feat/sr-improvements` (all merged or superseded), `feat/env` (PR #6).
@@ -401,3 +513,30 @@ Remote branches kept (never deleted): `brent` (old, superseded), `fix/dut-testbe
 
 ## Log
 New entries go below (Goal / What changed / How it works / Decisions / Verification / For Brent to check).
+
+### 2026-11-05 — PR #6 merge reverted on main (PR #7 merged)
+- Brent merged PR #6 himself (merge commit `2b0e278`) and then asked to revert it, so that milestone 2 is no longer on main.
+- Branch `revert/pr-6`: `git revert -m 1 2b0e278` → `83382ed`. **PR #7 merged** (Brent's explicit request) →
+  **main = `efe150e`**, identical to `f1ee5b1` (PR #5): `circuit_env.py` is the course version again; `test_env.py`,
+  `docs/worklog.md` and the report figure are not in the repo. pytest on main: 55 passed.
+- Both the revert and the pull of main deleted `docs/worklog.md` and `docs/report/` from disk (PR #6 had tracked them).
+  Restored from `cc96732` as local, git-ignored files.
+- Milestone 2 stays on `feat/env` (`cc96732`, pushed). **To bring it back later: revert the revert**
+  (`git revert efe150e` / `83382ed`). A plain merge of `feat/env` won't re-apply its commits, because git considers
+  them already merged.
+
+### 2026-11-04 — TA answers (temperature, slew rate); work log rewritten in plain text
+- **Goal:** record two TA answers and make the course-code changes and milestone 2 readable without the code.
+- **TA answers:**
+  - 27 °C is normal: some specs (gain, GBW) only pass at 27 °C.
+  - Slew rate: the TAs averaged it over the edges, and limiting the 10–90 % levels to a percentage of VDD is allowed.
+- **Check (scratch script, not committed):** the 5 references simulated with the testbench. Per design, the three rising
+  edges are identical within 0.3 %, and their average = our first rising edge = the TA value within 1 %. Averaging
+  rising and falling edges together doesn't match (Design 1: 46.4 V/µs vs TA 72.1 V/µs). So the TAs' "all edges" means
+  all rising edges, and no code change is needed.
+- **What changed:** TA questions 3 (slew-rate levels) and the 27 °C half of question 4 moved to "Answered by the TAs".
+  "Changes to the course code" is now plain text instead of a table. There is a new section, "What we did for
+  milestone 2, in plain words". `docs/worklog.md` only; no code changed.
+- **Also:** the `TODO TA: 25 or 27 degC?` comment in `circuit_env.py` l.75 is replaced by a note that the TAs confirmed
+  27 °C (Brent's OK; comment only, no behaviour change). pytest: 81 passed. Committed on `feat/env`, not pushed.
+
