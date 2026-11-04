@@ -59,8 +59,13 @@ class CircuitEnv(gym.Env):
         self.reward_history = []
         self.score_history = []
 
-        self.counter = 0
+        self.counter = 0  # number of ngspice simulations (reset + step): the 5000-simulation budget
+        # passed to every netlist; the netlist's own default would be 25 degC (TODO TA: 25 or 27 degC?)
         self.pvt_corner = {'process': 'TT', 'voltage': 1.2, 'temp': 27}
+
+        # every run gets its own folder: designs.csv, ngspice logs, netlists of feasible designs
+        self.run_folder = os.path.join(project_path, 'runs', str(run_id))
+        self.simulation_engine.logs_folder = os.path.join(self.run_folder, 'logs')  # clean.sh wipes no_backup/
     
     def action_refine(self, action):
         """
@@ -82,15 +87,28 @@ class CircuitEnv(gym.Env):
     
     def simulate(self, params):
         """
-        TODO: Create/Simulate netlist with the given parameters and return the measured metrics.
+        Create a netlist with the given parameters for the env's PVT corner, run ngspice and measure it.
+        Every call is one ngspice run and counts towards the simulation budget (self.counter).
 
         Args:
             params (dict): A dictionary containing the parameters for the simulation.
 
         Returns:
-            dict: A dictionary containing the measured metrics from the simulation.
+            dict: the measured metrics, or None for a failed simulation (ngspice error or broken output).
         """
-        pass
+        engine = self.simulation_engine
+        self.netlist_path = engine.create_new_netlist(params, process=self.pvt_corner['process'],
+                                                      temp_pvt=self.pvt_corner['temp'], vdd=self.pvt_corner['voltage'])
+        info = engine.simulate(self.netlist_path)
+        self.counter += 1
+        if info != 0:
+            return None  # ngspice reported an error
+        metrics = engine.measure_metrics()  # None if the output files are missing or broken
+        # noise, current and area are > 0 for any real circuit (the current includes Ibias = 30 uA):
+        # zero or negative means broken data
+        if metrics is not None and min(metrics['noise'], metrics['current'], metrics['area']) <= 0:
+            return None
+        return metrics
     
     def normalize_specs(self, spec_dict):
         """
