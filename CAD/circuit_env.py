@@ -37,6 +37,11 @@ class CircuitEnv(gym.Env):
 
         self.hard_constraints = yaml_data['hard_constraints']
         self.optimization_targets = yaml_data['optimization_targets']
+        # every hard constraint must be either a lower-bound or an upper-bound spec (normalize_specs and
+        # reward_computation rely on it): a new spec in TwoStage.yaml must be added to one of the two lists
+        for spec in self.hard_constraints:
+            if spec not in self.LOWER_BOUND_SPECS + self.UPPER_BOUND_SPECS:
+                raise ValueError(f"hard constraint '{spec}' is neither in LOWER_BOUND_SPECS nor in UPPER_BOUND_SPECS")
 
         # number of input action components
         self.n_actions = len(self.dict_params)

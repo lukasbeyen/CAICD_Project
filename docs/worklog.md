@@ -697,3 +697,19 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
 - **For Brent / Lukas:** main still has Lukas's original version (and the revert of PR #6). Merging needs the
   "revert the revert" route, to agree with Lukas.
 
+### 2026-11-04 — 2.7: refuse a hard constraint that is in neither spec list
+- **Goal:** put back the useful one of Lukas's `raise ValueError` checks (Brent asked why they were removed).
+  - His checks (a) and (c) ("spec missing from norm_specs") were redundant: `norm_specs[spec]` already raises a
+    `KeyError` naming the spec.
+  - Check (b) ("neither a lower nor an upper bound") was a real guard. Without it, a new hard constraint in the YAML
+    would count as a lower bound in `reward_computation`, but wouldn't be clipped in `normalize_specs`: an
+    inconsistency without any error.
+- **What changed:**
+  - `circuit_env.py` `__init__` l.40–44: every YAML hard constraint must be in `LOWER_BOUND_SPECS` or
+    `UPPER_BOUND_SPECS`, else `ValueError` at construction. It's a configuration check, so it fails at once, never
+    in the middle of a run.
+  - New `test_unclassified_hard_constraint_is_refused`.
+- **Correction to the comparison above:** "raises end a long run" holds for the `contains()` data checks, not for
+  these configuration checks (they fail on the first simulation).
+- **Verification:** pytest 95 passed.
+

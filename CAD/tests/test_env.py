@@ -182,6 +182,14 @@ def test_negative_pm_and_zero_ugbw_give_minus_one():
     assert not ok and reward == pytest.approx(-2.0)
 
 
+def test_unclassified_hard_constraint_is_refused(monkeypatch):
+    # a hard constraint in TwoStage.yaml that is in neither spec list would be treated inconsistently
+    # (reward: as a lower bound, normalize_specs: not clipped), so the env refuses to start
+    monkeypatch.setattr(CircuitEnv, 'LOWER_BOUND_SPECS', ['gain', 'phm', 'slewRate'])  # ugbw 'forgotten'
+    with pytest.raises(ValueError, match="'ugbw'"):
+        CircuitEnv(run_id='test')
+
+
 def test_reference_designs_normalization_and_reward():
     # the TAs' own normalized values (norm_*) and rewards for their 5 reference designs, from their spec_* values
     env = CircuitEnv(run_id='test')
