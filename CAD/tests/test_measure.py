@@ -13,7 +13,7 @@ import pytest
 import yaml
 from scipy.optimize import brentq
 
-from ngspice_interface import DUT
+from ngspice_interface import dut_testbench
 
 YAML_PATH = os.path.join('ngspice_interface', 'files', 'yaml_files', 'TwoStage.yaml')
 REFERENCE_DESIGNS = 'reference_designs.csv'  # from the TAs, still to come
@@ -91,7 +91,7 @@ def write_outputs(folder, name, tran=None, ac=None, dc=None, noise=None):
 
 
 def make_dut(tmp_path, name):
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     dut.output_files_folder = str(tmp_path)
     dut.random_name = name
     dut.circuit_params = MID_DESIGN  # needed for the area estimate
@@ -101,7 +101,7 @@ def make_dut(tmp_path, name):
 # ---------- gain, UGBW, PM on synthetic AC data ----------
 
 def test_single_pole_gain_ugbw_pm():
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     a0, fp = 500.0, 3e3
     vout = poles(a0, fp)
     exact_ugbw, exact_pm = exact_ugbw_and_pm(a0, fp)  # UGBW = fp*sqrt(A0^2-1), PM = 180 - atan(UGBW/fp) = 90.1 deg
@@ -115,7 +115,7 @@ def test_single_pole_gain_ugbw_pm():
 
 def test_two_pole_pm():
     # dominant pole 1 kHz, non-dominant 5 MHz, A0 = 1000: UGBW ~ 0.98 MHz, PM ~ 79 deg
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     vout = poles(1000.0, 1e3, 5e6)
     exact_ugbw, exact_pm = exact_ugbw_and_pm(1000.0, 1e3, 5e6)
     assert dut.find_ugbw(FREQ, vout) == pytest.approx(exact_ugbw, rel=1e-3)
@@ -125,7 +125,7 @@ def test_two_pole_pm():
 def test_three_pole_negative_pm_needs_unwrap():
     # three poles: the phase falls below -180 deg before |A| = 1, so PM is negative (unstable).
     # Without np.unwrap, np.angle would jump to +180 deg there and PM would come out above 180 deg.
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     vout = poles(1e4, 1e2, 1e5, 2e5)
     exact_ugbw, exact_pm = exact_ugbw_and_pm(1e4, 1e2, 1e5, 2e5)
     assert exact_pm < 0
@@ -135,7 +135,7 @@ def test_three_pole_negative_pm_needs_unwrap():
 
 def test_no_crossing_gives_zero_ugbw_and_pm():
     # DC gain below 1: |vout| never crosses 1 -> a valid simulation that fails the UGBW and PM specs
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     assert dut.find_ugbw(FREQ, poles(0.5, 3e3)) == 0.0
     assert dut.find_phm(FREQ, poles(0.5, 3e3)) == 0.0
 
@@ -143,7 +143,7 @@ def test_no_crossing_gives_zero_ugbw_and_pm():
 @pytest.mark.parametrize('n_points', [2, 3])
 def test_ugbw_too_few_ac_points_is_zero_without_exception(n_points):
     # the cubic spline behind find_ugbw needs 4 points; fewer must give 0, not a scipy error
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     freq = np.array([1e3, 1e6, 1e9])[:n_points]
     vout = np.array([100.0, 0.1, 0.001])[:n_points] + 0j
     assert dut.find_ugbw(freq, vout) == 0.0
@@ -164,7 +164,7 @@ def test_slew_rate_ideal_ramp():
     # 0 -> 1.2 V at 4 V/us starting at 0.53 us, back at 2 V/us starting at 5.51 us (off the 50 ns grid).
     # The 10 % and 90 % crossings lie on the straight part of the ramp, where linear interpolation
     # between samples is exact.
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     vout = trapezoid(time, 0.0, 1.2, 0.53e-6, 4e6, 5.51e-6, 2e6)
     sr = dut.find_slew_rate(time, vout, threshold_low=0.1, threshold_high=0.9, time_unit='us')
@@ -177,7 +177,7 @@ def test_slew_rate_ideal_ramp():
 
 def test_slew_rate_asymmetric_trapezoid_returns_slower_edge():
     # rise 4 V/us, fall 2 V/us: the spec must hold in both directions, so the slower edge counts
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     vout = trapezoid(time, 0.0, 1.2, 0.53e-6, 4e6, 5.51e-6, 2e6)
     assert dut.find_slew_rate(time, vout) == pytest.approx(2.0, rel=1e-6)
@@ -193,14 +193,14 @@ def test_slew_rate_asymmetric_trapezoid_returns_slower_edge():
     (np.arange(10) * 1e-6, np.zeros(9)),           # mismatched shapes
 ], ids=['empty', '1_sample', '2_samples', '3_samples', 'mismatched'])
 def test_slew_rate_bad_input_is_zero_without_exception(time, signal):
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     assert dut.find_slew_rate(time, signal) == 0.0
     assert dut.slew_rate_rise == 0.0 and dut.slew_rate_fall == 0.0
 
 
 def test_slew_rate_output_starting_high():
     # an output that starts high falls first: both edges are still found
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     vout = 1.2 - trapezoid(time, 0.0, 1.2, 0.53e-6, 1e6, 5.51e-6, 2e6)  # falls at 1, rises at 2 V/us
     assert dut.find_slew_rate(time, vout) == pytest.approx(1.0, rel=1e-6)
@@ -211,7 +211,7 @@ def test_slew_rate_undersampled_edge_is_underestimated():
     # A 20 V/us edge spends only 48 ns between 10 % and 90 %, less than one 50 ns sample of the
     # testbench's "tran 50n 30u". The interpolation then cuts the corners of the ramp: the 10 %
     # crossing comes out too early and the 90 % crossing too late, so SR is too LOW, never too high.
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     for slope in [10e6, 20e6, 40e6]:
         vout = trapezoid(time, 0.0, 1.2, 0.53e-6, slope, 5.51e-6, slope)
@@ -220,7 +220,7 @@ def test_slew_rate_undersampled_edge_is_underestimated():
 
 def test_slew_rate_flat_output_is_zero():
     # a railed output that never moves has no edge: SR = 0 (valid simulation, failing spec)
-    dut = DUT(YAML_PATH)
+    dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     assert dut.find_slew_rate(time, np.full_like(time, 3e-3)) == 0.0
     assert dut.slew_rate_rise == 0.0 and dut.slew_rate_fall == 0.0
@@ -275,7 +275,7 @@ def test_unreadable_output_is_failed(tmp_path):
 
 def test_mid_range_design_smoke(tmp_path):
     # runs ngspice end-to-end; only checks that every metric of TwoStage.yaml comes out finite
-    dut = DUT(YAML_PATH)
+    dut =   dut_testbench.DUT(YAML_PATH)
     dut.output_netlists_folder = dut.output_files_folder = dut.logs_folder = str(tmp_path)
     netlist_path = dut.create_new_netlist(MID_DESIGN, process='TT')
     assert dut.simulate(netlist_path) == 0
@@ -305,7 +305,7 @@ def ngspice_meas_reference(netlist_path):
 def test_measurements_match_ngspice_meas(tmp_path, name):
     # our gain, UGBW and PM (10 points/decade, log-log interpolation, np.unwrap) against ngspice's own
     # measurement of the same design on a 100x denser sweep (linear interpolation, cph)
-    dut = DUT(YAML_PATH)
+    dut =   dut_testbench.DUT(YAML_PATH)
     dut.output_netlists_folder = dut.output_files_folder = dut.logs_folder = str(tmp_path)
     netlist_path = dut.create_new_netlist(REAL_DESIGNS[name], process='TT')
     assert dut.simulate(netlist_path) == 0
@@ -323,7 +323,7 @@ def test_reference_designs():
     # 7 metric names of TwoStage.yaml. Adapt to the real format of the TAs' file.
     import pandas as pd
     yaml_data = yaml.load(open(YAML_PATH), Loader=yaml.Loader)
-    dut = DUT(YAML_PATH)
+    dut =   dut_testbench.DUT(YAML_PATH)
     for _, row in pd.read_csv(REFERENCE_DESIGNS).iterrows():
         design = {name: row[name] for name in yaml_data['params']}
         assert dut.simulate(dut.create_new_netlist(design, process='TT')) == 0
