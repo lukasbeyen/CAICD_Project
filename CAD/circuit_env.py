@@ -2,10 +2,13 @@ import gymnasium as gym
 from gymnasium.spaces import Box
 import numpy as np
 import os
+import csv
+import shutil
 import yaml
 import math
 from ngspice_interface import DUT as DUT_NGSpice
-from utils.plotting import plotLearning, plot_running_maximum
+from utils.plotting import plotLearning, plot_running_maximum, solutions2pareto
+from utils.saving import save_solutions_csv
 
 class CircuitEnv(gym.Env):
     PER_LOW, PER_HIGH = -np.inf, +np.inf
@@ -62,8 +65,11 @@ class CircuitEnv(gym.Env):
         # TODO(TA): weight of r_T while specs fail: 0.05 (slides) or the spec_weights of TwoStage.yaml?
         self.target_weight_when_failing = target_weight_when_failing
 
-        self.reward_history = []
-        self.score_history = []
+        self.reward_history = []  # the reward (FoM) of every simulation, reset() included
+        self.score_history = []  # the score (sum of the step rewards) of every finished episode
+        self.score = 0.0
+        self.episode = 0  # number of reset() calls
+        self.plot_every = 100  # update the plots every 100 simulations (and once more in finalize())
 
         self.counter = 0  # number of ngspice simulations (reset + step): the 5000-simulation budget
         # passed to every netlist; the netlist's own default would be 25 degC (TODO TA: 25 or 27 degC?)
@@ -103,9 +109,9 @@ class CircuitEnv(gym.Env):
             dict: the measured metrics, or None for a failed simulation (ngspice error or broken output).
         """
         engine = self.simulation_engine
-        self.netlist_path = engine.create_new_netlist(params, process=self.pvt_corner['process'],
-                                                      temp_pvt=self.pvt_corner['temp'], vdd=self.pvt_corner['voltage'])
-        info = engine.simulate(self.netlist_path)
+        self.last_netlist_path = engine.create_new_netlist(params, process=self.pvt_corner['process'],
+                                                           temp_pvt=self.pvt_corner['temp'], vdd=self.pvt_corner['voltage'])
+        info = engine.simulate(self.last_netlist_path)
         self.counter += 1
         if info != 0:
             return None  # ngspice reported an error
@@ -160,10 +166,81 @@ class CircuitEnv(gym.Env):
         self.param_values = self.action_refine(action)
         self.real_specs = self.simulate(self.param_values)
         self.cur_norm_specs = self.normalize_specs(self.real_specs)
+
+        # reward of this design; also for the random design of reset(), so every simulation has a FoM
+        self.failed = self.real_specs is None
+        if self.failed:
+            self.reward, self.hard_satisfied = self.failed_penalty, False
+        else:
+            self.reward, self.hard_satisfied = self.reward_computation(self.cur_norm_specs)
+        self.reward_history.append(self.reward)
+
+        if self.hard_satisfied:
+            self.save_feasible_design()
+        self.log_design()
+        if self.counter % self.plot_every == 0:
+            self.plot()
+
+    def log_design(self):
+        """
+        Append the current simulation to runs/<run_id>/designs.csv: one row per ngspice run (step 0 = reset).
+        Metrics are the raw measured values (empty for a failed sim), norm_* the values the agent sees.
+        """
+        row = {'sim': self.counter, 'episode': self.episode, 'step': self.episode_steps,
+               'netlist': os.path.basename(self.last_netlist_path), 'temp': self.pvt_corner['temp']}
+        row.update(self.param_values)
+        for name in self.dict_targets:
+            row[name] = '' if self.failed else self.real_specs[name]
+        row['slew_rate_rise'] = '' if self.failed else self.simulation_engine.slew_rate_rise
+        row['slew_rate_fall'] = '' if self.failed else self.simulation_engine.slew_rate_fall
+        for name in self.dict_targets:
+            row['norm_' + name] = self.cur_norm_specs[name]
+        row['reward'] = self.reward
+        row['failed'] = self.failed
+        row['hard_satisfied'] = self.hard_satisfied
+
+        os.makedirs(self.run_folder, exist_ok=True)
+        csv_path = os.path.join(self.run_folder, 'designs.csv')
+        new_file = not os.path.isfile(csv_path)
+        with open(csv_path, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=list(row))
+            if new_file:
+                writer.writeheader()
+            writer.writerow(row)
+
+    def save_feasible_design(self):
+        """
+        A design that meets all hard specs: copy its netlist to runs/<run_id>/feasible_netlists/ before clean.sh
+        deletes no_backup/ (needed for Solutions/), and add it to the course's solutions CSV (Pareto plot).
+        """
+        folder = os.path.join(self.run_folder, 'feasible_netlists')
+        os.makedirs(folder, exist_ok=True)
+        shutil.copy(self.last_netlist_path, folder)
+        os.makedirs('solutions', exist_ok=True)  # save_solutions_csv writes ./solutions/<run_id>.csv
+        save_solutions_csv(self.run_id, self.counter, self.param_values, self.real_specs, self.reward)
+
+    def plot(self):
+        """
+        The course plots in output_figs/<run_id>/: max FoM vs simulation and the episode scores.
+        Called every plot_every simulations and from finalize(), not on every step (plotting is slow).
+        """
+        os.makedirs(os.path.join('output_figs', str(self.run_id)), exist_ok=True)
+        plot_running_maximum(self.reward_history, self.run_id)
+        if self.score_history:
+            plotLearning(self.score_history, self.run_id)
+
+    def finalize(self):
+        """
+        Call once at the end of a run: last update of the plots, and the current-area Pareto plot of the feasible designs.
+        """
+        self.plot()
+        solutions_csv = os.path.join('solutions', f'{self.run_id}.csv')
+        if os.path.isfile(solutions_csv):
+            solutions2pareto(solutions_csv, self.run_id, show_all=True)
     
     def reset(self, *, seed=None, options=None):
         """
-        TODO: Reset the environment to an initial state and return the initial observation.
+        Reset the environment to an initial state and return the initial observation.
 
         Parameters:
             No mandatory input parameters (leave the input signature as is).
@@ -182,12 +259,19 @@ class CircuitEnv(gym.Env):
 
         Note:
         - The observation is returned as a NumPy array of type float32.
+        - This random design is a real simulation: it counts towards the budget and is logged like a step.
         """
-        pass
+        super().reset(seed=seed)  # seeds self.np_random when a seed is given
+        self.episode_steps = 0
+        self.episode += 1
+        action = self.np_random.uniform(-1, 1, self.n_actions)
+        self.evaluate(action)
+        self.score = 0.0
+        return self.observation(self.cur_norm_specs)
     
     def step(self, action):
         """
-        TODO: Perform a single step in the environment using the given action.
+        Perform a single step in the environment using the given action.
 
         This function should:
         1. Evaluate the given action.
@@ -210,8 +294,23 @@ class CircuitEnv(gym.Env):
             - reward (float): The reward obtained from taking the action.
             - done (bool): A flag indicating whether the episode has ended.
             - info (dict): Additional information, including whether the goal state was reached.
+
+        The reward and hard_satisfied are computed in evaluate(), the plots are updated there every
+        plot_every simulations (not on every feasible step: plotting is slow).
         """
-        pass
+        self.env_steps += 1
+        self.episode_steps += 1
+        self.evaluate(action)
+        ob = self.observation(self.cur_norm_specs)
+        self.score += self.reward
+
+        # an episode is max_steps_per_episode (10) designs; this is a time limit, not a goal state
+        done = self.episode_steps >= self.max_steps_per_episode
+        if done:
+            self.score_history.append(self.score)  # one score per episode, for plotLearning
+        info = {'hard_satisfied': self.hard_satisfied, 'failed': self.failed, 'specs': self.real_specs,
+                'sim': self.counter}
+        return ob, self.reward, done, info
     
     def reward_computation(self, norm_specs):
         """
@@ -280,3 +379,4 @@ if __name__ == '__main__':
     print("Next specs: ", env.real_specs)
     print("Reward: ", reward)
     print("Done: ", done)
+    env.finalize()
