@@ -32,9 +32,11 @@ class CircuitEnv(gym.Env):
         self.optimization_targets = yaml_data['optimization_targets']
 
         # number of input action components
+        # all tunable parameters W,L,C etc are actions.
         self.n_actions = len(self.dict_params)
 
         # number of output observation components
+        # all specs are targets.
         self.obs_dim = len(self.dict_targets)
 
         self.param_ranges = {}
@@ -67,7 +69,23 @@ class CircuitEnv(gym.Env):
         TODO: Implement a function that converts normalized actions of range [-1, 1] to actual parameter values.
         
         """
-        pass
+        #Check if valid action
+        if not self.action_space.contains(action):
+            raise ValueError(
+                f"Action must have shape ({self.n_actions},) and values in [-1, 1]."
+            )
+        
+        refined_params = {}
+        for i, (name, (min_val, max_val, step)) in enumerate(self.dict_params.items()):
+            normalized_action = (float(action[i]) + 1) / 2
+            raw_value = min_val + normalized_action * (max_val - min_val)
+
+            step_count = round((raw_value - min_val) / step)
+            max_step_count = int((max_val - min_val) // step)
+            refined_params[name] = min_val + min(step_count, max_step_count) * step
+
+        return refined_params
+
     
     def simulate(self, params):
         """
@@ -79,8 +97,15 @@ class CircuitEnv(gym.Env):
         Returns:
             dict: A dictionary containing the measured metrics from the simulation.
         """
-        pass
-    
+        self.simulation_engine.create_new_netlist(parameters=params, process=self.pvt_corner['process'],
+                                                  temp_pvt=self.pvt_corner['temp'], vdd=self.pvt_corner['voltage'])
+        info = self.simulation_engine.simulate(self.simulation_engine.random_name)
+        if info != 0:
+            print("Simulation failed")
+            return None
+        metrics = self.simulation_engine.measure_metrics()
+        return metrics
+
     def normalize_specs(self, spec_dict):
         """
         TODO: Normalize the specifications in `spec_dict` based on target specifications.
@@ -98,7 +123,22 @@ class CircuitEnv(gym.Env):
             dict: A dictionary containing the normalized specifications, with the same keys
                   as `spec_dict`.
         """
-        pass
+        #Check if spec_dict is in observation space
+        if not self.observation_space.contains(np.array(list(spec_dict.values()))):
+            raise ValueError(
+                f"spec_dict must have shape ({self.obs_dim},) and values in [{CircuitEnv.PER_LOW}, {CircuitEnv.PER_HIGH}]."
+            )
+
+        normalized_specs = {}
+        for spec, value in spec_dict.items(): 
+            if spec not in self.dict_targets:
+                raise ValueError(f"Specification '{spec}' not found in target specifications.")
+            goal_value = self.dict_targets[spec]
+            normalized_value = (value - goal_value) / (value + goal_value)
+            normalized_specs[spec] = normalized_value
+
+        return normalized_specs
+        
     
     def evaluate(self, action):
         self.param_values = self.action_refine(action)
@@ -127,8 +167,20 @@ class CircuitEnv(gym.Env):
         Note:
         - The observation is returned as a NumPy array of type float32.
         """
-        pass
-    
+        #reset the environment and set the seed for reproducibility
+        super().reset(seed=seed)
+        #1. Initialize the episode steps counter to zero
+        self.episode_steps = 0
+        #2. Generate a random action within the range [-1, 1] for each action parameter
+        random_action = self.np_random.uniform(-1, 1, [self.n_actions]).astype(self.action_space.dtype)
+        #3. Evaluate the environment with the generated random action
+        self.evaluate(random_action)
+        #4. Reset the episode score to zero
+        self.episode_score = 0.0
+        #5 Construct the initial observation by returning the normalized current specifications
+        initial_observation = np.array(list(self.cur_norm_specs.values()), dtype=np.float32)
+        return initial_observation
+
     def step(self, action):
         """
         TODO: Perform a single step in the environment using the given action.
@@ -155,7 +207,34 @@ class CircuitEnv(gym.Env):
             - done (bool): A flag indicating whether the episode has ended.
             - info (dict): Additional information, including whether the goal state was reached.
         """
-        pass
+        #1. Evaluate the given action
+        self.evaluate(action)
+        #2. Compute the reward and check if the hard constraints are satisfied
+        reward, hard_satisfied = self.reward_computation(self.cur_norm_specs)
+        #3. Update the current observation
+        ob = np.array(list(self.cur_norm_specs.values()), dtype=np.float32)
+        #4. Append the reward to the reward history and update the score
+        self.reward_history.append(reward)
+        self.episode_score += reward
+        #5. Create output directories if they do not exist
+        os.makedirs('output', exist_ok=True)
+        os.makedirs(f'output/{self.run_id}', exist_ok=True)
+        #6. If the goal state is reached, plot the running maximum reward
+        if hard_satisfied:
+            plot_running_maximum(self.reward_history, f'output/{self.run_id}/running_max_reward.png')
+        #7. Increment the environment and episode step counters
+        self.env_steps += 1
+        self.episode_steps += 1
+        #8. Check if the maximum steps per episode have been reached, setting the done flag if true
+        done = self.episode_steps >= self.max_steps_per_episode
+        #9. Every 10 steps, update the score history, also plot the learning curve, and reset the score
+        if self.env_steps % 10 == 0:
+            self.score_history.append(self.episode_score)
+            plotLearning(self.score_history, f'output/{self.run_id}/learning_curve.png')
+            self.episode_score = 0.0
+        #10. Return the current observation, reward, done flag, and additional information
+        info = {'hard_satisfied': hard_satisfied}
+        return ob, reward, done, info
     
     def reward_computation(self, norm_specs):
         """
@@ -177,7 +256,45 @@ class CircuitEnv(gym.Env):
             - If not, add weighted reward components of the optimization targets.
         4. Return the computed reward and the hard_satisfied flag.
         """
-        pass
+        #1. Initialize the reward to 0.0 and hard_satisfied to False
+        reward = 0.0
+        hard_satisfied = False
+        #2. Iterate over the hard constraints and adjust the reward based on the specifications
+        UPPER_BOUND_SPECS = ["noise"]
+        LOWER_BOUND_SPECS = ["gain", "phm", "slewRate", "ugbw"]
+        for spec in self.hard_constraints:
+            if spec not in norm_specs:
+                raise ValueError(f"Specification '{spec}' not found in normalized specifications.")
+            spec_value = norm_specs[spec]
+            if spec in UPPER_BOUND_SPECS:
+                reward -= max(0, spec_value) * self.spec_weights[spec]
+            elif spec in LOWER_BOUND_SPECS:
+                reward += min(0, spec_value) * self.spec_weights[spec]
+            else:
+                raise ValueError(f"Invalid specification '{spec}'.")
+        
+        #3. Check if all hard constraints are satisfied or the total reward passes the success threshold of 0.
+        if  reward >= self.success_threshold:
+            # If so, set hard_satisfied to True, add a bonus reward (+0.3), and adjust the reward based on optimization targets.
+            hard_satisfied = True
+            reward = 0.3
+            for spec in self.optimization_targets:
+                if spec not in norm_specs:
+                    raise ValueError(f"Specification '{spec}' not found in normalized specifications.")
+                spec_value = norm_specs[spec]
+                reward -= 0.05 * spec_value * self.spec_weights[spec]
+            
+        else:
+            # If not, add weighted reward components of the optimization targets.
+            for spec in self.optimization_targets:
+                if spec not in norm_specs:
+                    raise ValueError(f"Specification '{spec}' not found in normalized specifications.")
+                spec_value = norm_specs[spec]
+                reward -= 0.05 * spec_value * self.spec_weights[spec]
+
+        return reward, hard_satisfied
+
+            
 
 
 if __name__ == '__main__':
