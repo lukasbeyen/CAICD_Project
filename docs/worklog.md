@@ -20,8 +20,9 @@ PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3).
 **Milestone 2 — circuit environment** (PDF §2) — on `feat/env` (not on main)
 - ✅ 2.1 `action_refine` (the TAs' mapping; reproduces all reference actions → sizes)
 - ✅ 2.2 `simulate` (PVT corner, counter, failed sims)
-- ✅ 2.3 `normalize_specs` (with clipping), `observation`, `reward_computation` (FoM of `docs/fom.md`)
-- ✅ 2.4 `reset`, `step`, logging (`designs.csv`, feasible netlists), throttled plots, `finalize()`
+- ✅ 2.3 `normalize_specs` (with clipping), `reward_computation` (FoM of `docs/fom.md`)
+- ✅ 2.4 `reset`, `step`, logging (`designs.csv`, feasible netlists), plots as in the course docstring, `finalize()`
+- ✅ 2.6 rebuilt on Lukas's simpler structure (numbered course steps), his bugs fixed — branch `feat/td3`
 - ✅ 2.5 unit test file `test_env.py` (hand calculations + TA references)
 - ⬜ 2.R report section
 
@@ -54,7 +55,7 @@ PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3).
    or may we fix it?
 2. **Milestone 4:** Antigravity CLI only, or may we also call Gemini through google-genai?
 3. **Please confirm** the weight 0.05 on r_T while specs fail. It already follows from `references.csv`; once
-   confirmed, the `TODO(TA)` comment in `circuit_env.py` l.65 can go.
+   confirmed, the `TODO(TA)` comment in `circuit_env.py` l.67 can go.
 
 **Answered by the TAs**
 - **Temperature 27 °C:** the TAs said that some specs (e.g. gain and GBW) only pass at 27 °C, so it's normal that the
@@ -129,10 +130,12 @@ assignment itself. Everything else below is a fix or an addition we needed along
 
 **The environment (`circuit_env.py`), only on `feat/env`**
 - We filled in the six TODO methods: action → sizing, simulate, normalize, reset, step and reward.
-- The constructor gets two extra settings with default values, so the course's call still works: the penalty for a
+- The constructor keeps the course's signature. Two settings are plain attributes in `__init__`: the penalty for a
   failed simulation (−6) and the weight of the area/current term while specs fail (0.05).
-- `evaluate()` now also computes the reward, logs every simulation and keeps the netlists of designs that meet all
-  specs. We added a few helper methods for this, and `finalize()` for the end of a run.
+- `evaluate()` now also computes the reward, logs every simulation (`log_design()`) and keeps the netlists of designs
+  that meet all specs. `finalize()` draws the Pareto plot at the end of a run.
+- `reset()` and `step()` follow the course docstrings step by step (numbered comments, Lukas's style), including the
+  plots: the max-FoM plot on every step that meets all specs, the learning curve every 10 steps.
 - Every simulation is run at the env's PVT corner (TT, 1.2 V, 27 °C), and `self.counter` counts every simulation,
   towards the 5000 budget.
 
@@ -253,8 +256,8 @@ filled them in one at a time, with one commit per step, and then wrote a test fi
   whether the simulation failed or timed out.
 - **Designs that meet all specs:** their netlist is copied to the run folder, because `clean.sh` regularly wipes the
   scratch folder and the final submission needs these netlists.
-- **The course's plots:** they were redrawn after every step. One plot takes as long as a whole simulation, so we now
-  redraw them every 100 simulations and once at the end (`finalize()`, which also draws the Pareto plot).
+- **The course's plots:** first we redrew them every 100 simulations (one plot costs as much as a simulation). In the
+  rebuild on Lukas's structure (below) we went back to exactly what the course docstring says, for simplicity.
 - **The timeout:** after the slew-rate work added the 20 s timeout, the log got its own "timeout" column, and the two
   old slew-rate columns (rising/falling edge) were dropped.
 
@@ -278,36 +281,40 @@ filled them in one at a time, with one commit per step, and then wrote a test fi
 - `step()` keeps the course's 4-value return, because `td3_runner.py` and the TAs' baseline expect that.
 
 ## How milestone 2 works (`circuit_env.py`, PR #6)
-- **Action** (`action_refine` l.82): the actor outputs 20 numbers in [−1, 1] (tanh), one per parameter in YAML order,
+- **Action** (`action_refine` l.84): the actor outputs 20 numbers in [−1, 1] (tanh), one per parameter in YAML order,
   and each is a complete, *absolute* design.
   - The action is clipped to [−1, 1] (exploration noise).
   - The TAs' mapping: n_steps = (max − min)/step, `idx = floor((a + 1)/2 · (n_steps − 1))`, `value = min + idx·step`;
-    m is an `int`.
+    m stays an `int` (the YAML m values are ints).
   - It reproduces all 100 action → sizing pairs of the references.
   - Chosen for comparability with the reference designs and the TAs' baseline. The price: the YAML maximum is never
     reached (TA question 1).
-- **Simulate** (l.103): one ngspice run at `pvt_corner` (TT, 1.2 V, 27 °C); `self.counter += 1` for every run, resets
+- **Simulate** (l.100): one ngspice run at `pvt_corner` (TT, 1.2 V, 27 °C); `self.counter += 1` for every run, resets
   included (the 5000-sim budget). `None` = failed.
-- **State** (`normalize_specs` l.128, `observation` l.160):
+- **State** (`normalize_specs` l.125):
   - `z = (y − y*)/(y + y*)`, always in [−1, 1]. Why normalize: the raw metrics span 15 orders of magnitude (area 1e-9,
     UGBW 1e8), and the network needs one scale; z is the *relative* distance to the spec.
   - Gain/PM/SR/UGBW are clipped to ≥ 0 first: a negative PM would divide by zero at −60° and give a *positive* z below it.
-  - State = `[z_gain, z_noise, z_phm, z_slewRate, z_ugbw, o_area, o_current]` (float32).
-- **Reward** (`reward_computation` l.318), the FoM of `docs/fom.md`:
+  - State = the 7 normalized values in the YAML `targets` order:
+    `[o_area, o_current, z_gain, z_noise, z_phm, z_slewRate, z_ugbw]` (float32).
+- **Reward** (`reward_computation` l.307), the FoM of `docs/fom.md`:
   - `r_y = min(z, 0)` (lower-bound specs) or `−max(z, 0)` (noise): only violated specs cost, a beaten spec earns nothing.
   - `r_T = −Σ o_t` (area, current).
   - All met → `0.3 + r_T`; otherwise `r_H + 0.05·r_T`.
 - **Failed sim:** reward −6.0 (below the worst valid FoM −5.1, so breaking the simulator is never a way out); state =
-  worst case `[−1, +1, −1, −1, −1, +1, +1]` (finite, in range, no valid design produces it).
+  worst case `[+1, +1, −1, +1, −1, −1, −1]` (area, current, gain, noise, PM, SR, UGBW; finite, in range, no valid
+  design produces it).
 - **Episode:** `reset()` simulates a random design (seeded `self.np_random`) → s₀; then 10 `step()`s; `done` after 10 is a
   *time limit*, not a goal. The score = sum of the 10 step rewards (the reset design isn't the agent's choice).
-- **Logging** (`evaluate` l.168): every simulation is one row in `runs/<run_id>/designs.csv`:
+- **Logging** (`evaluate` l.156, `log_design` l.181): every simulation is one row in `runs/<run_id>/designs.csv`:
   - bookkeeping: sim, episode, step (0 = reset), netlist, temp;
   - the 20 params, the 7 raw metrics, the 7 `norm_*`;
   - reward, failed, **timeout**, hard_satisfied.
 
   Feasible designs: the netlist is copied to `runs/<run_id>/feasible_netlists/` and added to the course's solutions CSV.
-- **Plots** every 100 simulations and in `finalize()` (+ Pareto plot): one plot takes ~0.25 s, as long as a whole step.
+- **Plots** as in the course `step` docstring: the max-FoM plot on every step that meets all specs (step 6), the
+  learning curve every 10 steps (step 9); `finalize()` draws the Pareto plot. One plot takes ~0.25 s, about as long as
+  a simulation (~2 min per run for the learning curve, more once the agent finds feasible designs often).
 - **Tests (`test_env.py`, 24 functions / 26 cases):**
   - a fake simulator (fast) + one real-ngspice test;
   - TA reference actions → exactly the TA sizes; the TAs' norm_* and reward reproduced;
@@ -625,4 +632,68 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
     the normalized values and the rewards are identical, in value and in type;
   - one detail found this way: `r_hard >= 0` gives a numpy bool, so `bool(...)` keeps a plain True/False as before;
   - pytest: 92 passed.
+
+### 2026-11-04 — Lukas's `circuit_env.py` on main (`814f00c`) compared with ours
+- **What Lukas did:** pushed `814f00c` directly to main, with his own `circuit_env.py` (on top of the course version;
+  independent of ours) and `tests/test_reference_rewards.py` (the reward on the TAs' norm_* = their reward). Local
+  main is fast-forwarded to it (without switching branches).
+- **Checked by running his file from a scratch copy:**
+  - `action_refine`:
+    - `action_space.contains()` rejects every float64 action, i.e. every action from TD3's `select_action` →
+      `ValueError`;
+    - his linear mapping reproduces 5/100 TA action → sizing pairs (ours 100/100).
+  - `simulate` passes `random_name` instead of the netlist path to `engine.simulate` → **every simulation fails**.
+  - `normalize_specs`:
+    - `observation_space.contains()` rejects float64 metrics → `ValueError` even on valid metrics;
+    - `None` (a failed sim) → `AttributeError`;
+    - no clip, so PM = −100° gives z = +4 and the unstable amp **counts as meeting all specs** (reward 0.3,
+      hard_satisfied True).
+  - `reset()` crashes (because of the two points above).
+  - `reward_computation`, all specs met: 0.3 − 0.05·Σo instead of 0.3 + r_T (fom.md; hand case 4: 0.325 instead of
+    0.8). Both are equal while specs fail, which is why the TA references can't tell them apart.
+  - `step` passes a file path where the course plot functions expect `run_id` → `FileNotFoundError` at the first
+    feasible design; it also plots on every feasible step.
+  - Missing: the simulation counter, failed-sim penalty, designs.csv, feasible netlists, solutions CSV / Pareto.
+- **Good in his version:** numbered comments that follow the course docstring step by step; short; explicit
+  LOWER/UPPER spec lists; the seeded reset as ours; a simple, useful reference test (it passes against our env too).
+- **Recommendation:** keep our implementation, take over his test file and the numbered-step comment style in
+  `reset`/`step`. To agree with Lukas: main now has his env while ours is on `feat/env`/`feat/td3` → a conflict in
+  `circuit_env.py` when merging.
+
+### 2026-11-04 — 2.6: `circuit_env.py` rebuilt on Lukas's simpler structure, his bugs fixed
+- **Goal:** Brent: Lukas's version is simpler. Take it over and fix its issues (see the comparison entry above).
+  Understandability and simplicity first, as long as it works.
+- **What changed (branch `feat/td3`):**
+  - `1983994`: Lukas's `tests/test_reference_rewards.py`, copied unchanged from main.
+  - `circuit_env.py`: Lukas's structure, with the course docstrings and numbered `# 1.`…`# 10.` comments in `reset`,
+    `step` and `reward_computation`.
+- **Fixed relative to Lukas's version:**
+  - `simulate`: the netlist path instead of `random_name`, `self.counter += 1`, failed → `None`, the ≤ 0 check;
+  - no `contains()` checks (they reject float64 actions/metrics) and no `raise`s inside a run;
+  - `normalize_specs`: `None` → the worst-case state, and the clip at 0 for gain/PM/SR/UGBW;
+  - `reward_computation`: 0.3 + r_T when all specs pass (fom.md), and one loop instead of the duplicated one;
+  - plot calls with `run_id`;
+  - the TAs' mapping (100/100 references) instead of the linear one (5/100);
+  - added back: `designs.csv` logging, feasible netlists, the solutions CSV, the −6 penalty, `finalize()`
+    (Pareto).
+- **Simpler than our previous version:**
+  - the course constructor signature again (penalty and 0.05 are plain attributes);
+  - explicit `LOWER_BOUND_SPECS`/`UPPER_BOUND_SPECS` lists;
+  - no `observation()`, `plot()`, `plot_every`, `save_feasible_design()` or float-noise rounding;
+  - plots exactly as the course docstring says (Brent's choice).
+- **Behaviour changes (deliberate):**
+  - the state order is now the YAML `targets` order (area, current, gain, noise, phm, slewRate, ugbw), as in Lukas's
+    `list(cur_norm_specs.values())`;
+  - the plots follow the docstring: the max-FoM plot on every feasible step, the learning curve every 10 steps.
+- **One deviation from the docstring order:** step 7 (the counters) comes first in `step`, so `designs.csv` logs the
+  design as step 1…10 (the logging happens inside `evaluate`).
+- **Verification:**
+  - old vs new on 20 000 random spec sets: `normalize_specs` and `reward_computation` identical (values and types);
+  - `action_refine` on 10 000 actions: the same grid point, at most 1.7e-16 relative difference (float noise), same
+    types;
+  - a real ngspice smoke run of 3 episodes: 33 rows, sim 1…33, counter 33, 10 steps per episode, the learning curve
+    written;
+  - pytest: 94 passed (+ `test_plots_follow_the_course_steps`, + Lukas's test).
+- **For Brent / Lukas:** main still has Lukas's original version (and the revert of PR #6). Merging needs the
+  "revert the revert" route, to agree with Lukas.
 

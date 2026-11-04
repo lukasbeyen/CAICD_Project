@@ -17,7 +17,7 @@ import circuit_env
 from circuit_env import CircuitEnv
 
 TARGETS = {'area': 2e-9, 'current': 2e-4, 'gain': 200.0, 'noise': 0.03, 'phm': 60.0, 'slewRate': 30.0, 'ugbw': 1e8}
-OBS_ORDER = ['gain', 'noise', 'phm', 'slewRate', 'ugbw', 'area', 'current']  # hard constraints, then targets
+OBS_ORDER = ['area', 'current', 'gain', 'noise', 'phm', 'slewRate', 'ugbw']  # the order of TwoStage.yaml's targets
 
 
 class FakeEngine:
@@ -78,8 +78,10 @@ def test_reference_actions_give_the_reference_sizing():
         params = env.action_refine(action)
         for name, value in params.items():
             expected = ref.loc['param_' + name, design]
-            expected = int(expected) if name.startswith('m') else float(expected)
-            assert value == expected, (design, name, value, expected)
+            if name.startswith('m'):
+                assert value == int(expected) and isinstance(value, int), (design, name, value, expected)
+            else:  # min + idx * step carries float noise (1.2499999999999999e-06 for 1.25e-06)
+                assert value == pytest.approx(float(expected), rel=1e-12), (design, name, value, expected)
 
 
 def test_action_endpoints():
@@ -192,10 +194,10 @@ def test_reference_designs_normalization_and_reward():
         assert reward == pytest.approx(float(ref.loc['reward', design]), abs=1e-9), design
 
 
-def test_observation_order_and_dtype():
-    env = CircuitEnv(run_id='test')
-    norm = env.normalize_specs(dict(TARGETS, gain=100.0, current=2e-4 / 3))
-    obs = env.observation(norm)
+def test_observation_order_and_dtype(make_env):
+    # the observation is the normalized specs as a float32 array, in the order of TwoStage.yaml's targets
+    env = make_env(metrics=dict(TARGETS, gain=100.0, current=2e-4 / 3))
+    obs = env.reset(seed=0)
     assert obs.dtype == np.float32 and obs.shape == (7,)
     assert obs[OBS_ORDER.index('gain')] == pytest.approx(-1 / 3)
     assert obs[OBS_ORDER.index('current')] == pytest.approx(-0.5)
@@ -209,7 +211,8 @@ def test_failed_measurement_gives_the_penalty_and_worst_state(make_env):
     env = make_env(metrics='broken')
     obs = env.reset(seed=0)
     assert env.failed and env.reward == -6.0
-    assert list(obs) == [-1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
+    worst = {'area': 1.0, 'current': 1.0, 'gain': -1.0, 'noise': 1.0, 'phm': -1.0, 'slewRate': -1.0, 'ugbw': -1.0}
+    assert list(obs) == [worst[name] for name in OBS_ORDER]
     obs, reward, done, info = env.step(np.zeros(env.n_actions))
     assert reward == -6.0 and info['failed'] and not info['hard_satisfied']
 
@@ -286,6 +289,26 @@ def test_episode_ends_after_10_steps(make_env):
     assert dones == [False] * 9 + [True]
     assert len(env.score_history) == 1
     assert env.score_history[0] == pytest.approx(sum(env.reward_history[1:]))  # the reset design is not in the score
+
+
+def test_plots_follow_the_course_steps(tmp_path, monkeypatch):
+    # course step() docstring: 6. plot the running maximum when the goal state (all specs met) is reached,
+    # 9. every 10 steps plot the learning curve. The course plot functions are replaced by ones that count calls.
+    running_max_plots, learning_plots = [], []
+    monkeypatch.setattr(circuit_env, 'plot_running_maximum', lambda *args: running_max_plots.append(1))
+    monkeypatch.setattr(circuit_env, 'plotLearning', lambda *args: learning_plots.append(1))
+    monkeypatch.setattr(circuit_env, 'save_solutions_csv', lambda *args: None)
+    env = CircuitEnv(run_id='test')
+    env.run_folder = str(tmp_path / 'run')
+    env.simulation_engine = FakeEngine(str(tmp_path), metrics=dict(TARGETS, gain=100.0))  # gain fails: not feasible
+    env.reset(seed=0)
+    for _ in range(10):
+        env.step(np.zeros(env.n_actions))
+    assert len(running_max_plots) == 0 and len(learning_plots) == 1
+    env.simulation_engine.metrics = TARGETS  # all specs met from now on
+    for _ in range(3):
+        env.step(np.zeros(env.n_actions))
+    assert len(running_max_plots) == 3 and len(learning_plots) == 1
 
 
 def test_reset_with_a_seed_is_reproducible(make_env):
