@@ -254,8 +254,23 @@ def test_slew_rate_cap_follows_vdd():
     assert dut.slew_rate_rise < 0.5
 
 
+def test_slew_rate_kick_below_ground_is_floored():
+    # the output kicks down to -0.3 V just before the edge (like the feed-forward through Cc when the input steps
+    # up), then rises 0 -> 1.2 V at 2 V/us. Unfloored: 10 % = -0.3 + 0.1 * 1.5 = -0.15 V, crossed when the kick
+    # recovers, long before the real edge. Floored at 0.1 * VDD = 0.12 V; 90 % = -0.3 + 0.9 * 1.5 = 1.05 V (below
+    # the cap). On the straight ramp: SR = (1.05 - 0.12) V / ((1.05 - 0.12) V / 2 V/us) = 2 V/us.
+    dut = dut_testbench.DUT(YAML_PATH)
+    time = np.arange(0, 10e-6, 5e-9)
+    vout = glitchy_edge(time, 1.2, 2e6, 1e6, 1.2)
+    vout[(time > 0.9e-6) & (time < 0.95e-6)] = -0.3
+    sr = dut.find_slew_rate(time, vout, vdd=1.2)
+    assert dut.slew_rate_v10 == pytest.approx(0.12)  # floored (unfloored it would be -0.15 V)
+    assert dut.slew_rate_v90 == pytest.approx(1.05)
+    assert sr == pytest.approx(2.0, rel=1e-6)
+
+
 def test_slew_rate_inside_the_rails_is_not_capped():
-    # 0.2 V -> 0.8 V: 90 % = 0.2 + 0.9 * 0.6 = 0.74 V, below the cap 1.08 V: levels and result unchanged
+    # 0.2 V -> 0.8 V: 90 % = 0.74 V is below the cap 1.08 V and 10 % = 0.26 V above the floor 0.12 V: unchanged
     dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 10e-6, 5e-9)
     vout = 0.2 + glitchy_edge(time, 0.6, 2e6, 1e6, 0.6)  # "glitch" at the settled level = no glitch
@@ -270,6 +285,9 @@ def test_slew_rate_degenerate_capped_swing_is_zero():
     dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 10e-6, 5e-9)
     vout = 1.1 + glitchy_edge(time, 0.2, 2e6, 1e6, 0.2)
+    assert dut.find_slew_rate(time, vout, vdd=1.2) == 0.0
+    # and the mirror case: an output between -0.3 V and 0.1 V, 90 % = 0.06 V is below the floor 0.12 V
+    vout = -0.3 + glitchy_edge(time, 0.4, 2e6, 1e6, 0.4)
     assert dut.find_slew_rate(time, vout, vdd=1.2) == 0.0
 
 

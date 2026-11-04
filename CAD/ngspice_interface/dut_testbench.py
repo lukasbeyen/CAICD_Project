@@ -127,9 +127,9 @@ class DUT(NgspiceWrapper):
         of its swing on the first rising edge, with the crossing times linearly interpolated between the two
         samples around them (the same as ngspice's meas). In V/us (time_unit='us') or V/s ('s'), also kept in
         self.slew_rate_rise. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
-        The 90 % level is capped at threshold_high * vdd (vdd = supply voltage in V, required): a glitch or
-        overshoot above the real swing would otherwise push the 90 % level up. The levels used are kept in
-        self.slew_rate_v10 and self.slew_rate_v90.
+        The 90 % level is capped at threshold_high * vdd and the 10 % level floored at threshold_low * vdd
+        (vdd = supply voltage in V, required): a glitch above VDD or a kick below 0 V would otherwise move the
+        levels away from the real edge. The levels used are kept in self.slew_rate_v10 and self.slew_rate_v90.
         """
         if vdd is None:
             raise ValueError('find_slew_rate needs vdd (the supply voltage of the simulation) to cap the 90 % level')
@@ -144,11 +144,13 @@ class DUT(NgspiceWrapper):
             return 0.0  # flat (railed) output: no edge
         v_10 = v_low + threshold_low * (v_high - v_low)
         v_90 = v_low + threshold_high * (v_high - v_low)
-        # hard limit: a glitch above the real swing must not move the 90 % level above threshold_high * VDD
+        # hard limits: a glitch above the real swing must not move the 90 % level above threshold_high * VDD,
+        # a kick below ground must not move the 10 % level below threshold_low * VDD
         v_90 = min(v_90, threshold_high * vdd)
+        v_10 = max(v_10, threshold_low * vdd)
         self.slew_rate_v10, self.slew_rate_v90 = v_10, v_90
         if v_90 <= v_10:
-            return 0.0  # degenerate swing (e.g. the whole output sits above the cap): no edge
+            return 0.0  # degenerate swing (e.g. the whole output sits above the cap or below the floor): no edge
 
         t_10 = self._first_rising_crossing(time, signal, v_10)
         t_90 = self._first_rising_crossing(time, signal, v_90, after=t_10)
