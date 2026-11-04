@@ -104,7 +104,17 @@ class TD3(object):
         Returns:
             action: The selected action as a numpy array
         """
-        pass
+        # 1. the actor expects a float tensor with a batch dimension: shape (1, state_dim)
+        if not torch.is_tensor(state):
+            state = torch.as_tensor(np.asarray(state), dtype=torch.float32)
+        state = state.float().reshape(1, -1).to(device)
+        # 2. the deterministic action mu(s); no_grad: acting is not training, no gradients needed
+        with torch.no_grad():
+            mu = self.actor(state).cpu().numpy().flatten()
+        # 3. Gaussian exploration noise, one value per action dimension (TD3 paper, Algorithm 1: a = pi(s) + eps)
+        noise = np.random.normal(0, self.max_action * self.expl_noise, size=self.action_dim)
+        # 4. keep the action inside the action space [-max_action, max_action]
+        return np.clip(mu + noise, -self.max_action, self.max_action)
 
 
     def update_parameters(self, memory_batch, update):
@@ -143,6 +153,44 @@ class TD3(object):
             memory_batch: Tuple of (state, action, next_state, reward, not_done) tensors
             update: Update step (not used in this implementation)
         """
+        # 1. count the updates (for the delayed policy update below)
+        self.total_it += 1
+        # 2. a mini-batch of transitions, in the order of ReplayBuffer.sample(); every tensor has batch_size rows
+        state, action, next_state, reward, not_done = memory_batch
+
+        with torch.no_grad():  # the target y is a fixed label: no gradients through the target networks
+            # 3. target policy smoothing (paper §5.3): the target actor's action plus clipped Gaussian noise
+            noise = (torch.randn_like(action) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
+            next_action = (self.actor_target(next_state) + noise).clamp(-self.max_action, self.max_action)
+            # 4. clipped double Q-learning (paper §4.2): the smaller of the two target critics,
+            #    y = r + gamma * min(Q1', Q2'); not_done = 0 at the end of an episode, so there y = r
+            target_q1, target_q2 = self.critic_target(next_state, next_action)
+            target_q = reward + not_done * self.discount * torch.min(target_q1, target_q2)
+
+        # 5. both critics regress onto the same target y
+        current_q1, current_q2 = self.critic(state, action)
+        critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
+
+        # 6. one gradient step on the critics
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+
+        # 7. delayed policy update (paper §5.2): the actor and the target networks only every policy_freq updates
+        if self.total_it % self.policy_freq == 0:
+            # the actor maximises the first critic's value of its own action: minimise -Q1(s, pi(s)).
+            # Only the actor's optimizer steps; the critic's gradients from this backward are cleared by the
+            # critic_optimizer.zero_grad() of the next update.
+            actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor_optimizer.step()
+
+            # soft update of the target networks: theta' <- tau * theta + (1 - tau) * theta'
+            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+            for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
     def save(self, filename):
