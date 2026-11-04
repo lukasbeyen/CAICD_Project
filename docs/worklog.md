@@ -25,8 +25,10 @@ PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3).
 - ✅ 2.5 unit test file `test_env.py` (hand calculations + TA references)
 - ⬜ 2.R report section
 
-**Milestone 3 — TD3 agent** (PDF §3)
-- ⬜ 3.1 `select_action` (exploration noise) · ⬜ 3.2 `update_parameters` (twin critics, target smoothing, delayed actor, soft updates)
+**Milestone 3 — TD3 agent** (PDF §3) — guide with explanations, open decisions and step plan: `docs/milestone3_guide.md`
+- ✅ 3.1 `select_action` (exploration noise) · ✅ 3.2 `update_parameters` (twin critics, target smoothing, delayed actor,
+  soft updates) + `tests/test_agent.py` — branch `feat/td3`
+- ⬜ 3.3 runner fixes (stop at 5000 sims, seeding, `finalize()`, yaml/hyperparameter copy, start values)
 - ⬜ 3.3 tune the 5 required hyperparameters: noise sigma, batch size, warm-up steps, actor lr, critic lr
 - ⬜ 3.4 5000-sim run; plots: max FoM vs simulation, current–area Pareto front
 - ⬜ 3.5 compare with the TAs' baseline agent within 5k sims · ⬜ 3.R report section
@@ -539,4 +541,88 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
   milestone 2, in plain words". `docs/worklog.md` only; no code changed.
 - **Also:** the `TODO TA: 25 or 27 degC?` comment in `circuit_env.py` l.75 is replaced by a note that the TAs confirmed
   27 °C (Brent's OK; comment only, no behaviour change). pytest: 81 passed. Committed on `feat/env`, not pushed.
+
+### 2026-11-04 — 3.0: milestone 3 guide (no code)
+- **Goal:** Brent can follow milestone 3 closely: what is asked, what TD3 does in circuit terms, what we must write,
+  what's wrong in the course runner, the hyperparameters, and the step plan.
+- **What changed:** new `docs/milestone3_guide.md` (local, not committed).
+- **Content:**
+  - the PDF requirements;
+  - the RL ↔ circuit table;
+  - the three TD3 tricks with the equations (paper §4.2, §5.2, §5.3);
+  - the given Actor/Critic/buffer;
+  - runner problems R1–R9: `"???"` defaults; the `memory=` keyword → `TypeError`; misleading but harmless batch
+    names; stop on 10 000 steps instead of 5000 sims; seeding that misses the env and action space; no `finalize()`;
+    no yaml/hyperparameter copy;
+  - the start values and tuning plan;
+  - the tests;
+  - exam questions.
+- **Measured:** one TD3 update on this VM costs 3.7 ms (batch 64) / 7.0 ms (batch 256), against ~0.2 s per sim, so
+  a 5000-sim run is ~21–25 min. The VM has 2 cores → at most 2 runs in parallel.
+- **For Brent (decisions D1–D4 in the guide §6):**
+  - D1: stop on `env.counter >= 5000`;
+  - D2: keep the course's `done` at the 10-step time limit;
+  - D3: branch `feat/td3` from `feat/env`;
+  - D4: minimal runner fixes R1–R7.
+
+### 2026-11-04 — 3.0–3.2: branch `feat/td3`, `select_action`, `update_parameters`, `test_agent.py`
+- **Brent's decisions on the guide §6:**
+  - D1: stop at 5000 sims, marked clearly in the code so it can be reverted;
+  - D2: keep the course's `done` at the 10-step time limit;
+  - D3: branch `feat/td3` from `feat/env`;
+  - D4: minimal runner fixes. The `memory=` keyword (R2) Brent fixed himself; the misleading batch names (R3) stay as
+    they are.
+- **What changed:**
+  - branch `feat/td3` from `feat/env` (`73ac392`, local);
+  - `00a4ac3`: Brent's runner fix, `update_parameters(memory_batch=batch, ...)`;
+  - `td3/agent.py`: `select_action` (l.87–118), `update_parameters` (l.120–194);
+  - new `tests/test_agent.py` (11 tests).
+- **How `select_action` works (l.107–118):** state → float tensor of shape (1, 7) → the actor's μ(s) under
+  `no_grad` → plus Gaussian noise N(0, (max_action·σ)²) per dimension → clipped to [−1, 1].
+- **How `update_parameters` works (l.156–194), TD3 paper Algorithm 1:**
+  1. `total_it += 1`;
+  2. unpack (s, a, s', r, not_done) in the buffer's order;
+  3. under `no_grad`: target smoothing, ã = clip(π'(s') + clip(N(0, 0.2), ±0.5), ±1) (§5.3);
+  4. y = r + γ·not_done·min(Q₁', Q₂') (§4.2);
+  5. critic loss = MSE(Q₁, y) + MSE(Q₂, y);
+  6. one Adam step on the critics;
+  7. every 2nd update (§5.2): actor loss −mean Q₁(s, π(s)), an Adam step on the actor, then the soft update
+     θ' ← τθ + (1−τ)θ' for both critics and the actor.
+- **Decisions:**
+  - Written exactly as in the docstrings and the paper, with no extras: no loss logging (can be added for tuning if
+    needed) and `update` stays unused (the docstring says so).
+  - The actor's backward also fills the critic's `.grad`; that's harmless, because the next update starts with
+    `critic_optimizer.zero_grad()`. Same as the authors' reference code.
+- **Verification:** `test_agent.py`, 11 tests:
+  - the action's shape, bounds, σ = 0 → μ(s), numpy/tensor input, noise spread = σ;
+  - the critic changes every update, the actor and the targets every 2nd;
+  - no gradients reach the targets; the soft update is exactly τ;
+  - y uses min(Q₁', Q₂'); y = r at the end of an episode; the smoothing noise is clipped;
+  - a toy bandit is learned (the critic loss −90 %, the actor within 0.1 of the best action).
+
+  **Mutation check:** 8 typical mistakes (max instead of min, `not_done` ignored, no delay, τ swapped, unclipped
+  smoothing noise, the actor minimising Q, an unclipped action, no `no_grad`): each makes ≥ 1 test fail.
+  Full pytest: 92 passed.
+- **For Brent:** I explain both functions line by line in the chat (stop after 3.2). Next: 3.3, the runner fixes.
+
+### 2026-11-04 — 2.x: `circuit_env.py` more readable (no behaviour change)
+- **Goal:** Brent asked to make the implemented env functions simpler and more readable without breaking correctness.
+- **What changed (`circuit_env.py`, branch `feat/td3`):**
+  - `__init__` l.38–39: a new list `self.lower_bound_specs`, the hard constraints that must *reach* their target
+    (gain, phm, slewRate, ugbw). It's derived from the YAML's `hard_constraints` minus `UPPER_BOUND_SPECS`, so the
+    YAML stays the source of truth.
+  - `normalize_specs`: the failed case (`spec_dict is None`) is handled first, in one line, before the loop. The
+    loop now only normalizes; `goal` is renamed `target`.
+  - `reward_computation`: the variable `reward` was first used as r_H and then overwritten with the FoM. Now there
+    are separate `r_hard` (r_H) and `r_targets` (r_T), as in `docs/fom.md`, and `hard_satisfied` is computed in one
+    line; the unused `hard_satisfied = False` start value is gone.
+- **Deliberately not changed:**
+  - `action_refine` (the TAs' mapping, already 10 lines);
+  - `simulate`, `evaluate`, `log_design`, `reset`, `step` (already one line per action);
+  - the course docstrings, signatures and API.
+- **Verification:**
+  - old vs new version on 20 000 random measurement sets (0.001×–1000× the target, negative values, failed sims):
+    the normalized values and the rewards are identical, in value and in type;
+  - one detail found this way: `r_hard >= 0` gives a numpy bool, so `bool(...)` keeps a plain True/False as before;
+  - pytest: 92 passed.
 

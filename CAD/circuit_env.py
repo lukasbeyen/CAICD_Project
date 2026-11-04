@@ -35,6 +35,8 @@ class CircuitEnv(gym.Env):
 
         self.hard_constraints = yaml_data['hard_constraints']
         self.optimization_targets = yaml_data['optimization_targets']
+        # hard constraints that must REACH their target: gain, phm, slewRate, ugbw (all except noise)
+        self.lower_bound_specs = [name for name in self.hard_constraints if name not in self.UPPER_BOUND_SPECS]
 
         # number of input action components
         self.n_actions = len(self.dict_params)
@@ -145,17 +147,17 @@ class CircuitEnv(gym.Env):
             dict: A dictionary containing the normalized specifications, with the same keys
                   as `spec_dict`.
         """
+        if spec_dict is None:
+            # failed simulation: the worst value of every metric,
+            # -1 for a spec that must be high enough, +1 for one that must be low (noise, area, current)
+            return {name: -1.0 if name in self.lower_bound_specs else 1.0 for name in self.dict_targets}
+
         norm_specs = {}
-        for name, goal in self.dict_targets.items():
-            lower_bound = name in self.hard_constraints and name not in self.UPPER_BOUND_SPECS
-            if spec_dict is None:
-                # failed sim: worst case, -1 for a lower-bound spec, +1 for noise, area and current
-                norm_specs[name] = -1.0 if lower_bound else 1.0
-                continue
+        for name, target in self.dict_targets.items():
             value = spec_dict[name]
-            if lower_bound:
+            if name in self.lower_bound_specs:
                 value = max(value, 0.0)  # e.g. a negative PM (unstable amp) counts as 0 -> z = -1
-            norm_specs[name] = (value - goal) / (value + goal)
+            norm_specs[name] = (value - target) / (value + target)
         return norm_specs
 
     def observation(self, norm_specs):
@@ -336,28 +338,26 @@ class CircuitEnv(gym.Env):
             - If not, add weighted reward components of the optimization targets.
         4. Return the computed reward and the hard_satisfied flag.
         """
-        reward = 0.0
-        hard_satisfied = False
-        # hard constraints (r_H): only a violated spec costs reward, a spec that is beaten earns nothing
+        # r_H, hard constraints: only a violated spec costs reward, a spec that is beaten earns nothing
+        r_hard = 0.0
         for name in self.hard_constraints:
             z = norm_specs[name]
-            if name in self.UPPER_BOUND_SPECS:
-                r = -max(z, 0.0)  # noise above its target: z > 0 -> negative reward
+            if name in self.lower_bound_specs:
+                r_hard += self.spec_weights[name] * min(z, 0.0)  # e.g. gain below its target: z < 0 -> negative
             else:
-                r = min(z, 0.0)  # e.g. gain below its target: z < 0 -> negative reward
-            reward += self.spec_weights[name] * r
-        # optimization targets (r_T): less area and current is always better, r_t = -o_t
+                r_hard += self.spec_weights[name] * -max(z, 0.0)  # noise above its target: z > 0 -> negative
+
+        # r_T, optimization targets: less area and current is always better, r_t = -o_t
         r_targets = 0.0
         for name in self.optimization_targets:
-            r_targets += -self.spec_weights[name] * norm_specs[name]
+            r_targets += self.spec_weights[name] * -norm_specs[name]
 
-        if reward >= self.success_threshold:
-            # all specs met (r_H = 0): bonus, then optimize area and current
-            hard_satisfied = True
-            reward = 0.3 + r_targets
+        # all specs met when r_H reaches the threshold (0: no spec violated)
+        hard_satisfied = bool(r_hard >= self.success_threshold)  # bool(): a plain True/False, not a numpy bool
+        if hard_satisfied:
+            reward = 0.3 + r_targets  # bonus, then optimize area and current
         else:
-            # specs not met: mostly push towards the specs, area and current only weakly
-            reward = reward + self.target_weight_when_failing * r_targets
+            reward = r_hard + self.target_weight_when_failing * r_targets  # mostly the specs, area/current weakly
         return reward, hard_satisfied
 
 
