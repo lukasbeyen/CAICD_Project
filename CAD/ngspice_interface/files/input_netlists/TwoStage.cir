@@ -55,21 +55,27 @@ option numdgt=7
 * transient analysis
 tran 50n 30u
 * save Vout data in a file named 'tran_TwoStage.csv'
+* columns: time, v(net6)
 wrdata tran_TwoStage.csv v(net6)
 
 * ac analysis
 ac dec 10 1 1T
 * save Vout data in a file named 'ac_TwoStage.csv'
+* columns: frequency, real(v(net6)), imag(v(net6)); the differential input is 1 V, so v(net6) is the gain
 wrdata ac_TwoStage.csv v(net6)
 
 * noise analysis
 * calculate the output noise and save it in a file named 'noise_TwoStage.csv'
+* integrated over the same band as the ac analysis; plot noise2 holds the integrated noise
+* columns: onoise_total (Vrms), written twice because this plot has no scale vector
 noise v(net6) Vinput dec 10 1 1T
 wrdata noise_TwoStage.csv noise2.onoise_total
 
 * dc analysis
 op
 * save the total current consumption in a file named 'dc_TwoStage.csv'
+* columns: v(net4) (an op plot has no scale vector, so ngspice puts its first vector here), i(vdd)
+* i(vdd) is negative: the supply delivers current, so dut_testbench.py uses -i(vdd)
 wrdata dc_TwoStage.csv i(vdd)
 
 .endc
