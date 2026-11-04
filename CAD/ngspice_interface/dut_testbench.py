@@ -123,14 +123,10 @@ class DUT(NgspiceWrapper):
 
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us', vdd=None):
         """
-        Slew rate: speed of the output between 10 % and 90 % of its swing, evaluated on EVERY rising and
-        EVERY falling edge of the transient. Per direction the fastest edge is kept, then the slowest of
-        the two directions is returned (the spec must hold in both directions), in V/us (time_unit='us')
-        or V/s ('s'). Both per-direction values are kept in self.slew_rate_rise and self.slew_rate_fall,
-        and every individual edge rate (in the requested unit) in self.slew_rate_rise_edges / _fall_edges.
-        Crossing times are located with the spline root finder _get_best_crossing on a local window of
-        samples, so a coarse time grid does not turn the chord between two samples into a too-small
-        slew rate. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
+        Slew rate of the RISING edge, as in the TAs' reference designs: speed of the output between 10 % and 90 %
+        of its swing on the first rising edge, with the crossing times linearly interpolated between the two
+        samples around them (the same as ngspice's meas). In V/us (time_unit='us') or V/s ('s'), also kept in
+        self.slew_rate_rise. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
         The 90 % level is capped at threshold_high * vdd (vdd = supply voltage in V, required): a glitch or
         overshoot above the real swing would otherwise push the 90 % level up. The levels used are kept in
         self.slew_rate_v10 and self.slew_rate_v90.
@@ -139,8 +135,7 @@ class DUT(NgspiceWrapper):
             raise ValueError('find_slew_rate needs vdd (the supply voltage of the simulation) to cap the 90 % level')
         time = np.asarray(time, dtype=float)
         signal = np.asarray(signal, dtype=float)
-        self.slew_rate_rise, self.slew_rate_fall = 0.0, 0.0
-        self.slew_rate_rise_edges, self.slew_rate_fall_edges = [], []
+        self.slew_rate_rise = 0.0
         self.slew_rate_v10, self.slew_rate_v90 = None, None
         if time.size < 4 or time.shape != signal.shape:
             return 0.0
@@ -154,68 +149,27 @@ class DUT(NgspiceWrapper):
         self.slew_rate_v10, self.slew_rate_v90 = v_10, v_90
         if v_90 <= v_10:
             return 0.0  # degenerate swing (e.g. the whole output sits above the cap): no edge
-        dv = v_90 - v_10  # the slew rate uses the levels actually used
 
-        # rising edges: 10 % -> 90 %. Falling edges: mirror the signal, so a falling 90 % -> 10 % edge
-        # becomes a rising edge between -v_90 and -v_10 and the same routine can be reused.
-        rise_durations = self._edge_durations(time, signal, v_10, v_90)
-        fall_durations = self._edge_durations(time, -signal, -v_90, -v_10)
+        t_10 = self._first_rising_crossing(time, signal, v_10)
+        t_90 = self._first_rising_crossing(time, signal, v_90, after=t_10)
+        if t_10 is None or t_90 is None or t_90 <= t_10:
+            return 0.0  # the output never gets from 10 % to 90 %: no slew rate, a failing spec
 
         to_time_unit = {'s': 1.0, 'us': 1e-6}[time_unit]  # V/s -> V/us
-        self.slew_rate_rise_edges = [dv / d * to_time_unit for d in rise_durations]
-        self.slew_rate_fall_edges = [dv / d * to_time_unit for d in fall_durations]
+        self.slew_rate_rise = (v_90 - v_10) / (t_90 - t_10) * to_time_unit
+        return self.slew_rate_rise
 
-        # fastest edge per direction (0.0 if the direction has no complete edge: a failing spec)
-        self.slew_rate_rise = max(self.slew_rate_rise_edges) if self.slew_rate_rise_edges else 0.0
-        self.slew_rate_fall = max(self.slew_rate_fall_edges) if self.slew_rate_fall_edges else 0.0
-        # slowest of the two directions
-        return min(self.slew_rate_rise, self.slew_rate_fall)
-
-    def _edge_durations(self, time, signal, lo, hi):
+    def _first_rising_crossing(self, time, signal, level, after=None):
         """
-        Durations of all complete rising edges lo -> hi in the signal. An edge starts at the last upward
-        crossing of `lo` before the signal reaches `hi`; if the signal drops back below `lo` before
-        reaching `hi`, the attempt is discarded (no complete edge).
+        First time (after `after`, if given) at which signal crosses `level` upwards, linearly interpolated
+        between the two samples around the crossing. None if it never does.
         """
-        durations = []
-        t_start = None
         for i in range(len(signal) - 1):
-            s0, s1 = signal[i], signal[i + 1]
-            if s0 < lo <= s1:                                  # upward crossing of lo: (re)start the edge
-                t_start = self._crossing_time(time, signal, i, lo)
-            elif s0 >= lo > s1:                                # fell back below lo: aborted edge
-                t_start = None
-            if t_start is not None and s0 < hi <= s1:          # upward crossing of hi: edge complete
-                t_end = self._crossing_time(time, signal, i, hi)
-                if t_end > t_start:
-                    durations.append(t_end - t_start)
-                t_start = None
-        return durations
-
-    def _crossing_time(self, time, signal, i, level):
-        """
-        Time at which `signal` reaches `level` inside the sample interval i -> i+1 (known to bracket it
-        upwards). Uses _get_best_crossing on the 4 samples around the interval, with the time axis
-        normalised to u = (t - t_i) / (t_i+1 - t_i) so brentq's absolute xtol does not depend on the
-        time scale. Falls back to linear interpolation if the window is unusable (time not strictly
-        increasing, window end points do not bracket the level, root outside the interval).
-        """
-        t0, t1 = time[i], time[i + 1]
-        linear = np.interp(level, [signal[i], signal[i + 1]], [t0, t1])
-        if signal.size < 4 or not t1 > t0:
-            return linear
-        a = min(max(i - 1, 0), signal.size - 4)    # window a..a+3 always contains i and i+1
-        t_win = time[a:a + 4]
-        if not np.all(np.diff(t_win) > 0):
-            return linear
-        u_win = (t_win - t0) / (t1 - t0)
-        try:
-            u, ok = self._get_best_crossing(u_win, signal[a:a + 4], level)
-        except ValueError:
-            return linear
-        if not ok or not 0.0 <= u <= 1.0:
-            return linear
-        return t0 + u * (t1 - t0)
+            if after is not None and time[i + 1] <= after:
+                continue
+            if signal[i] < level <= signal[i + 1]:
+                return np.interp(level, [signal[i], signal[i + 1]], [time[i], time[i + 1]])
+        return None
 
     def _get_best_crossing(cls, xvec, yvec, val):
         interp_fun = interp.InterpolatedUnivariateSpline(xvec, yvec)
