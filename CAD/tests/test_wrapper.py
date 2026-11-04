@@ -59,3 +59,18 @@ def test_simulate_reports_ngspice_error(tmp_path):
     text = open(netlist_path).read().replace('p045_TT.sp', 'p045_missing.sp')
     open(netlist_path, 'w').write(text)
     assert dut.simulate(netlist_path) == 1
+
+
+def test_simulate_timeout_is_failed(tmp_path):
+    # a simulation that runs longer than sim_timeout is killed and reported as failed (info = 1), with timed_out set
+    dut = make_dut(tmp_path)
+    dut.output_files_folder = str(tmp_path)
+    dut.sim_timeout = 0.001  # s: far shorter than any ngspice run
+    assert dut.simulate(dut.create_new_netlist(MID_DESIGN, process='TT')) == 1
+    assert dut.timed_out
+    log = [f for f in os.listdir(str(tmp_path)) if f.endswith('.log')]
+    assert 'simulation timeout' in open(os.path.join(str(tmp_path), log[0])).read()
+    # the next normal simulation clears the flag
+    dut.sim_timeout = 20.0
+    assert dut.simulate(dut.create_new_netlist(MID_DESIGN, process='TT')) == 0
+    assert not dut.timed_out
