@@ -21,7 +21,9 @@ class DUT(NgspiceWrapper):
         spec_dict['gain'] = self.find_dc_gain(self.vout_complex)
         spec_dict['noise'] = self.noise
         spec_dict['phm'] = self.find_phm(self.freq, self.vout_complex)
-        spec_dict['slewRate'] = self.find_slew_rate(self.time, self.vout_tran, threshold_low=0.1, threshold_high=0.9, time_unit='us')
+        # VDD of this simulation: the netlist's .param VDD, or the vdd passed to create_new_netlist (env's pvt_corner)
+        spec_dict['slewRate'] = self.find_slew_rate(self.time, self.vout_tran, threshold_low=0.1, threshold_high=0.9,
+                                                    time_unit='us', vdd=float(self.VDD))
         spec_dict['ugbw'] = self.find_ugbw(self.freq, self.vout_complex)
 
         # a NaN or inf metric means the simulation data was broken: failed simulation
@@ -119,90 +121,53 @@ class DUT(NgspiceWrapper):
         phase_at_ugbw = np.interp(np.log10(ugbw), np.log10(freq), phase)
         return 180.0 + phase_at_ugbw
 
-    def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
+    def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us', vdd=None):
         """
-        Slew rate: speed of the output between 10 % and 90 % of its swing, evaluated on EVERY rising and
-        EVERY falling edge of the transient. Per direction the fastest edge is kept, then the slowest of
-        the two directions is returned (the spec must hold in both directions), in V/us (time_unit='us')
-        or V/s ('s'). Both per-direction values are kept in self.slew_rate_rise and self.slew_rate_fall,
-        and every individual edge rate (in the requested unit) in self.slew_rate_rise_edges / _fall_edges.
-        Crossing times are located with the spline root finder _get_best_crossing on a local window of
-        samples, so a coarse time grid does not turn the chord between two samples into a too-small
-        slew rate. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
+        Slew rate of the first RISING edge of the output (the TAs' definition), in V/us (time_unit='us') or V/s ('s').
+        Input: the transient, time in s and signal in V, and vdd, the supply voltage of the simulation in V (required).
+
+        1. Levels: v_10 and v_90 at 10 % and 90 % of the output swing (minimum to maximum of the signal), but never
+           outside 10 % ... 90 % of VDD. A glitch above VDD would push v_90 up, and the kick below 0 V when the input
+           steps up (feed-forward through Cc) would pull v_10 down: both move the levels away from the real edge.
+        2. Crossing times: t_10 = first time the output rises through v_10, t_90 = the next time it rises through
+           v_90, each linearly interpolated between the two samples around it (as ngspice's meas does).
+        3. Slew rate = (v_90 - v_10) / (t_90 - t_10).
+        Returns 0.0, never an exception, if there is no rising edge to measure: too few samples, mismatched arrays,
+        a flat output or no room between the levels, or an edge that never reaches v_90.
+        The levels used are kept in self.slew_rate_levels = (v_10, v_90).
         """
+        if vdd is None:
+            raise ValueError('find_slew_rate needs vdd, the supply voltage of the simulation, for its level limits')
         time = np.asarray(time, dtype=float)
         signal = np.asarray(signal, dtype=float)
-        self.slew_rate_rise, self.slew_rate_fall = 0.0, 0.0
-        self.slew_rate_rise_edges, self.slew_rate_fall_edges = [], []
+        self.slew_rate_levels = None
         if time.size < 4 or time.shape != signal.shape:
             return 0.0
-        v_low, v_high = np.min(signal), np.max(signal)
-        if v_high <= v_low:
-            return 0.0  # flat (railed) output: no edge
-        v_10 = v_low + threshold_low * (v_high - v_low)
-        v_90 = v_low + threshold_high * (v_high - v_low)
-        dv = v_90 - v_10
 
-        # rising edges: 10 % -> 90 %. Falling edges: mirror the signal, so a falling 90 % -> 10 % edge
-        # becomes a rising edge between -v_90 and -v_10 and the same routine can be reused.
-        rise_durations = self._edge_durations(time, signal, v_10, v_90)
-        fall_durations = self._edge_durations(time, -signal, -v_90, -v_10)
+        v_low, v_high = np.min(signal), np.max(signal)
+        v_10 = max(v_low + threshold_low * (v_high - v_low), threshold_low * vdd)
+        v_90 = min(v_low + threshold_high * (v_high - v_low), threshold_high * vdd)
+        self.slew_rate_levels = (v_10, v_90)
+        if v_90 <= v_10:
+            return 0.0  # a flat output, or a swing entirely above 90 % / below 10 % of VDD: no edge
+
+        t_10 = self._rising_crossing_time(time, signal, v_10)
+        t_90 = None if t_10 is None else self._rising_crossing_time(time, signal, v_90, after=t_10)
+        if t_90 is None:
+            return 0.0  # the output never completes a rising edge: a failing spec, not a broken simulation
 
         to_time_unit = {'s': 1.0, 'us': 1e-6}[time_unit]  # V/s -> V/us
-        self.slew_rate_rise_edges = [dv / d * to_time_unit for d in rise_durations]
-        self.slew_rate_fall_edges = [dv / d * to_time_unit for d in fall_durations]
+        return (v_90 - v_10) / (t_90 - t_10) * to_time_unit
 
-        # fastest edge per direction (0.0 if the direction has no complete edge: a failing spec)
-        self.slew_rate_rise = max(self.slew_rate_rise_edges) if self.slew_rate_rise_edges else 0.0
-        self.slew_rate_fall = max(self.slew_rate_fall_edges) if self.slew_rate_fall_edges else 0.0
-        # slowest of the two directions
-        return min(self.slew_rate_rise, self.slew_rate_fall)
-
-    def _edge_durations(self, time, signal, lo, hi):
+    def _rising_crossing_time(self, time, signal, level, after=-np.inf):
         """
-        Durations of all complete rising edges lo -> hi in the signal. An edge starts at the last upward
-        crossing of `lo` before the signal reaches `hi`; if the signal drops back below `lo` before
-        reaching `hi`, the attempt is discarded (no complete edge).
+        First time after `after` at which the signal rises through `level`, linearly interpolated between the
+        two samples around the crossing. None if it never does.
         """
-        durations = []
-        t_start = None
         for i in range(len(signal) - 1):
-            s0, s1 = signal[i], signal[i + 1]
-            if s0 < lo <= s1:                                  # upward crossing of lo: (re)start the edge
-                t_start = self._crossing_time(time, signal, i, lo)
-            elif s0 >= lo > s1:                                # fell back below lo: aborted edge
-                t_start = None
-            if t_start is not None and s0 < hi <= s1:          # upward crossing of hi: edge complete
-                t_end = self._crossing_time(time, signal, i, hi)
-                if t_end > t_start:
-                    durations.append(t_end - t_start)
-                t_start = None
-        return durations
-
-    def _crossing_time(self, time, signal, i, level):
-        """
-        Time at which `signal` reaches `level` inside the sample interval i -> i+1 (known to bracket it
-        upwards). Uses _get_best_crossing on the 4 samples around the interval, with the time axis
-        normalised to u = (t - t_i) / (t_i+1 - t_i) so brentq's absolute xtol does not depend on the
-        time scale. Falls back to linear interpolation if the window is unusable (time not strictly
-        increasing, window end points do not bracket the level, root outside the interval).
-        """
-        t0, t1 = time[i], time[i + 1]
-        linear = np.interp(level, [signal[i], signal[i + 1]], [t0, t1])
-        if signal.size < 4 or not t1 > t0:
-            return linear
-        a = min(max(i - 1, 0), signal.size - 4)    # window a..a+3 always contains i and i+1
-        t_win = time[a:a + 4]
-        if not np.all(np.diff(t_win) > 0):
-            return linear
-        u_win = (t_win - t0) / (t1 - t0)
-        try:
-            u, ok = self._get_best_crossing(u_win, signal[a:a + 4], level)
-        except ValueError:
-            return linear
-        if not ok or not 0.0 <= u <= 1.0:
-            return linear
-        return t0 + u * (t1 - t0)
+            if time[i + 1] > after and signal[i] < level <= signal[i + 1]:
+                return np.interp(level, [signal[i], signal[i + 1]], [time[i], time[i + 1]])
+        return None
 
     def _get_best_crossing(cls, xvec, yvec, val):
         interp_fun = interp.InterpolatedUnivariateSpline(xvec, yvec)

@@ -3,6 +3,7 @@ import re
 import yaml
 import random
 import string
+import subprocess
 import time 
 
 class NgspiceWrapper(object):
@@ -19,6 +20,10 @@ class NgspiceWrapper(object):
         self.output_netlists_folder = os.path.join(project_path, 'no_backup', 'output_netlists')
         self.output_files_folder = os.path.join(project_path, 'no_backup', 'output_files')
         self.logs_folder = os.path.join(project_path, 'no_backup', 'logs')  # the env may point this to runs/<run_id>/logs
+        # a simulation that takes longer is stopped and counts as failed: a few unstable designs make ngspice crawl
+        # (one took > 10 min), while a normal simulation takes ~0.2 s
+        self.sim_timeout = 20.0  # s
+        self.timed_out = False  # True if the last simulate() was stopped by the timeout
         self.param_names = yaml_data['params'].keys()
         self.parameters = {}
         self.read_netlist()
@@ -120,13 +125,20 @@ class NgspiceWrapper(object):
         # ngspice's own output goes to one log file per netlist, never to the console
         os.makedirs(self.logs_folder, exist_ok=True)
         log_path = os.path.join(self.logs_folder, os.path.basename(netlist_path).replace('.cir', '.log'))
-        command = "ngspice -b %s > %s 2>&1" % (netlist_path, log_path)
-        # os.system returns a wait status (exit code * 256), not the exit code itself;
-        # the original "status % 256" therefore missed ngspice's exit(1) on fatal errors
-        exit_code = os.waitstatus_to_exitcode(os.system(command))
+        self.timed_out = False
+        with open(log_path, 'w') as log:
+            try:
+                # subprocess.run returns ngspice's real exit code (os.system returned a wait status, exit code * 256)
+                # and kills ngspice when the timeout expires
+                exit_code = subprocess.run(['ngspice', '-b', netlist_path], stdout=log, stderr=subprocess.STDOUT,
+                                           timeout=self.sim_timeout).returncode
+            except subprocess.TimeoutExpired:
+                self.timed_out = True
+                log.write(f'\n*** stopped by the {self.sim_timeout:g} s simulation timeout ***\n')
+                exit_code = None
         if exit_code != 0:
             # raise RuntimeError('program {} failed!'.format(command))
-            info = 1 # this means an error has occurred
+            info = 1 # this means an error has occurred (or the timeout)
         return info
     
 
