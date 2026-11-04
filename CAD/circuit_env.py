@@ -82,15 +82,18 @@ class CircuitEnv(gym.Env):
     def action_refine(self, action):
         """
         Convert a normalized action in [-1, 1] (one value per parameter, in TwoStage.yaml order) to real
-        parameter values: linear mapping -1 -> min, +1 -> max, then snapped to the nearest grid step of the YAML.
+        parameter values, with the TAs' mapping (it reproduces all action -> sizing pairs of references.csv):
+        each parameter has n_steps = (max - min) / step grid steps; [-1, 1] is split into n_steps - 1 equal bins
+        and bin idx = floor((a + 1) / 2 * (n_steps - 1)) gives the value min + idx * step.
+        So a = -1 gives min, a = +1 gives max - step, and the YAML max itself is never reached.
         The multipliers m are integers.
         """
         action = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)  # exploration noise can push past +-1
         params = {}
         for a, (name, r) in zip(action, self.param_ranges.items(), strict=True):
-            value = r['min'] + (a + 1) / 2 * (r['max'] - r['min'])
-            n = round((value - r['min']) / r['step'])  # index of the nearest grid point
-            value = r['min'] + n * r['step']
+            n_steps = round((r['max'] - r['min']) / r['step'])
+            idx = math.floor((a + 1) / 2 * (n_steps - 1))
+            value = r['min'] + idx * r['step']
             if name.startswith('m'):
                 params[name] = int(round(value))
             else:
