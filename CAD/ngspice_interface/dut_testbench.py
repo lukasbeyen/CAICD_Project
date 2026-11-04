@@ -21,7 +21,9 @@ class DUT(NgspiceWrapper):
         spec_dict['gain'] = self.find_dc_gain(self.vout_complex)
         spec_dict['noise'] = self.noise
         spec_dict['phm'] = self.find_phm(self.freq, self.vout_complex)
-        spec_dict['slewRate'] = self.find_slew_rate(self.time, self.vout_tran, threshold_low=0.1, threshold_high=0.9, time_unit='us')
+        # VDD of this simulation: the netlist's .param VDD, or the vdd passed to create_new_netlist (env's pvt_corner)
+        spec_dict['slewRate'] = self.find_slew_rate(self.time, self.vout_tran, threshold_low=0.1, threshold_high=0.9,
+                                                    time_unit='us', vdd=float(self.VDD))
         spec_dict['ugbw'] = self.find_ugbw(self.freq, self.vout_complex)
 
         # a NaN or inf metric means the simulation data was broken: failed simulation
@@ -119,7 +121,7 @@ class DUT(NgspiceWrapper):
         phase_at_ugbw = np.interp(np.log10(ugbw), np.log10(freq), phase)
         return 180.0 + phase_at_ugbw
 
-    def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
+    def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us', vdd=None):
         """
         Slew rate: speed of the output between 10 % and 90 % of its swing, evaluated on EVERY rising and
         EVERY falling edge of the transient. Per direction the fastest edge is kept, then the slowest of
@@ -129,11 +131,17 @@ class DUT(NgspiceWrapper):
         Crossing times are located with the spline root finder _get_best_crossing on a local window of
         samples, so a coarse time grid does not turn the chord between two samples into a too-small
         slew rate. Never raises: too few samples, mismatched arrays or a flat output give 0.0.
+        The 90 % level is capped at threshold_high * vdd (vdd = supply voltage in V, required): a glitch or
+        overshoot above the real swing would otherwise push the 90 % level up. The levels used are kept in
+        self.slew_rate_v10 and self.slew_rate_v90.
         """
+        if vdd is None:
+            raise ValueError('find_slew_rate needs vdd (the supply voltage of the simulation) to cap the 90 % level')
         time = np.asarray(time, dtype=float)
         signal = np.asarray(signal, dtype=float)
         self.slew_rate_rise, self.slew_rate_fall = 0.0, 0.0
         self.slew_rate_rise_edges, self.slew_rate_fall_edges = [], []
+        self.slew_rate_v10, self.slew_rate_v90 = None, None
         if time.size < 4 or time.shape != signal.shape:
             return 0.0
         v_low, v_high = np.min(signal), np.max(signal)
@@ -141,7 +149,12 @@ class DUT(NgspiceWrapper):
             return 0.0  # flat (railed) output: no edge
         v_10 = v_low + threshold_low * (v_high - v_low)
         v_90 = v_low + threshold_high * (v_high - v_low)
-        dv = v_90 - v_10
+        # hard limit: a glitch above the real swing must not move the 90 % level above threshold_high * VDD
+        v_90 = min(v_90, threshold_high * vdd)
+        self.slew_rate_v10, self.slew_rate_v90 = v_10, v_90
+        if v_90 <= v_10:
+            return 0.0  # degenerate swing (e.g. the whole output sits above the cap): no edge
+        dv = v_90 - v_10  # the slew rate uses the levels actually used
 
         # rising edges: 10 % -> 90 %. Falling edges: mirror the signal, so a falling 90 % -> 10 % edge
         # becomes a rising edge between -v_90 and -v_10 and the same routine can be reused.

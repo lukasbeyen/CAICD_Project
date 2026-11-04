@@ -21,6 +21,7 @@ REFERENCES = 'references.csv'  # TA reference designs: one column per design; ro
 
 # same frequency grid as the netlist's "ac dec 10 1 1T"
 FREQ = np.logspace(0, 12, 121)
+VDD = 1.2  # supply of the testbench (.param VDD in TwoStage.cir), for the synthetic slew-rate signals
 
 # a mid-range design on the TwoStage.yaml grid (W, L in m, Cc in F, Rc in ohm)
 MID_DESIGN = {}
@@ -169,12 +170,12 @@ def test_slew_rate_ideal_ramp():
     dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     vout = trapezoid(time, 0.0, 1.2, 0.53e-6, 4e6, 5.51e-6, 2e6)
-    sr = dut.find_slew_rate(time, vout, threshold_low=0.1, threshold_high=0.9, time_unit='us')
+    sr = dut.find_slew_rate(time, vout, threshold_low=0.1, threshold_high=0.9, time_unit='us', vdd=VDD)
     assert dut.slew_rate_rise == pytest.approx(4.0, rel=1e-6)
     assert dut.slew_rate_fall == pytest.approx(2.0, rel=1e-6)
     assert sr == pytest.approx(2.0, rel=1e-6)  # the slower edge
     # same signal in V/s
-    assert dut.find_slew_rate(time, vout, time_unit='s') == pytest.approx(2e6, rel=1e-6)
+    assert dut.find_slew_rate(time, vout, time_unit='s', vdd=VDD) == pytest.approx(2e6, rel=1e-6)
 
 
 @pytest.mark.xfail(strict=True, reason='find_slew_rate of 2ceb44d (4-point spline crossings) is 0.1-0.7 % off on ideal straight ramps; the slew rate is being reworked (rising edge only)')
@@ -183,7 +184,7 @@ def test_slew_rate_asymmetric_trapezoid_returns_slower_edge():
     dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     vout = trapezoid(time, 0.0, 1.2, 0.53e-6, 4e6, 5.51e-6, 2e6)
-    assert dut.find_slew_rate(time, vout) == pytest.approx(2.0, rel=1e-6)
+    assert dut.find_slew_rate(time, vout, vdd=VDD) == pytest.approx(2.0, rel=1e-6)
     assert dut.slew_rate_rise == pytest.approx(4.0, rel=1e-6)
     assert dut.slew_rate_fall == pytest.approx(2.0, rel=1e-6)
 
@@ -197,7 +198,7 @@ def test_slew_rate_asymmetric_trapezoid_returns_slower_edge():
 ], ids=['empty', '1_sample', '2_samples', '3_samples', 'mismatched'])
 def test_slew_rate_bad_input_is_zero_without_exception(time, signal):
     dut = dut_testbench.DUT(YAML_PATH)
-    assert dut.find_slew_rate(time, signal) == 0.0
+    assert dut.find_slew_rate(time, signal, vdd=VDD) == 0.0
     assert dut.slew_rate_rise == 0.0 and dut.slew_rate_fall == 0.0
 
 
@@ -207,8 +208,76 @@ def test_slew_rate_output_starting_high():
     dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
     vout = 1.2 - trapezoid(time, 0.0, 1.2, 0.53e-6, 1e6, 5.51e-6, 2e6)  # falls at 1, rises at 2 V/us
-    assert dut.find_slew_rate(time, vout) == pytest.approx(1.0, rel=1e-6)
+    assert dut.find_slew_rate(time, vout, vdd=VDD) == pytest.approx(1.0, rel=1e-6)
     assert dut.slew_rate_rise == pytest.approx(2.0, rel=1e-6)
+
+
+def glitchy_edge(time, v_settled, rise_slope, fall_slope, v_glitch):
+    # 0 V -> v_settled at rise_slope from 1 us, a short glitch up to v_glitch around 5 us (like the kick through Cc),
+    # back to v_settled, then down to 0 V at fall_slope from 6 us. Slow ramps on a 5 ns grid: every 4-sample window
+    # around a 10 % / 90 % crossing lies on a straight part, so the crossings are exact.
+    up = np.clip(rise_slope * (time - 1e-6), 0.0, v_settled)
+    down = np.clip(v_settled - fall_slope * (time - 6e-6), 0.0, v_settled)
+    vout = np.where(time < 6e-6, up, down)
+    glitch = (time > 4.9e-6) & (time < 5.1e-6)
+    vout[glitch] = v_glitch
+    return vout
+
+
+def test_slew_rate_glitch_above_vdd_is_capped():
+    # settled at 1.2 V with a glitch to 1.5 V. Uncapped: 90 % = 0 + 0.9 * 1.5 = 1.35 V, never reached by the real
+    # edge (only by the glitch). Capped at 0.9 * VDD = 1.08 V. 10 % = 0.15 V. On straight ramps the slew rate is
+    # the ramp slope: rise (1.08 - 0.15) V / ((1.08 - 0.15) V / 2 V/us) = 2 V/us, fall 1 V/us; min = 1 V/us.
+    dut = dut_testbench.DUT(YAML_PATH)
+    time = np.arange(0, 10e-6, 5e-9)
+    vout = glitchy_edge(time, 1.2, 2e6, 1e6, 1.5)
+    sr = dut.find_slew_rate(time, vout, vdd=1.2)
+    assert dut.slew_rate_v10 == pytest.approx(0.15)
+    assert dut.slew_rate_v90 == pytest.approx(1.08)  # capped (uncapped it would be 1.35 V)
+    assert dut.slew_rate_rise == pytest.approx(2.0, rel=1e-6)
+    assert dut.slew_rate_fall == pytest.approx(1.0, rel=1e-6)
+    assert sr == pytest.approx(1.0, rel=1e-6)
+
+
+def test_slew_rate_cap_follows_vdd():
+    # settled at 1.0 V with a glitch to 1.3 V. With VDD = 1.0 V the cap is 0.9 V: on the edge, SR = 2 V/us.
+    # With VDD = 1.2 V the cap is 1.08 V, above the settled 1.0 V: the 90 % level (min(1.17, 1.08) = 1.08 V) is only
+    # reached by the glitch, so the rising "edge" ends at the glitch and reads far too slow.
+    dut = dut_testbench.DUT(YAML_PATH)
+    time = np.arange(0, 10e-6, 5e-9)
+    vout = glitchy_edge(time, 1.0, 2e6, 1e6, 1.3)
+    dut.find_slew_rate(time, vout, vdd=1.0)
+    assert dut.slew_rate_v90 == pytest.approx(0.9)
+    assert dut.slew_rate_rise == pytest.approx(2.0, rel=1e-6)
+    dut.find_slew_rate(time, vout, vdd=1.2)
+    assert dut.slew_rate_v90 == pytest.approx(1.08)
+    assert dut.slew_rate_rise < 0.5
+
+
+def test_slew_rate_inside_the_rails_is_not_capped():
+    # 0.2 V -> 0.8 V: 90 % = 0.2 + 0.9 * 0.6 = 0.74 V, below the cap 1.08 V: levels and result unchanged
+    dut = dut_testbench.DUT(YAML_PATH)
+    time = np.arange(0, 10e-6, 5e-9)
+    vout = 0.2 + glitchy_edge(time, 0.6, 2e6, 1e6, 0.6)  # "glitch" at the settled level = no glitch
+    dut.find_slew_rate(time, vout, vdd=1.2)
+    assert dut.slew_rate_v10 == pytest.approx(0.26)
+    assert dut.slew_rate_v90 == pytest.approx(0.74)
+    assert dut.slew_rate_rise == pytest.approx(2.0, rel=1e-6)
+
+
+def test_slew_rate_degenerate_capped_swing_is_zero():
+    # the output only moves between 1.1 V and 1.3 V: 10 % = 1.12 V is above the cap 1.08 V -> no edge, 0.0, no error
+    dut = dut_testbench.DUT(YAML_PATH)
+    time = np.arange(0, 10e-6, 5e-9)
+    vout = 1.1 + glitchy_edge(time, 0.2, 2e6, 1e6, 0.2)
+    assert dut.find_slew_rate(time, vout, vdd=1.2) == 0.0
+
+
+def test_slew_rate_without_vdd_raises():
+    dut = dut_testbench.DUT(YAML_PATH)
+    time = np.arange(0, 10e-6, 5e-9)
+    with pytest.raises(ValueError, match='vdd'):
+        dut.find_slew_rate(time, glitchy_edge(time, 1.2, 2e6, 1e6, 1.2))
 
 
 def test_slew_rate_undersampled_edge_is_underestimated():
@@ -219,14 +288,14 @@ def test_slew_rate_undersampled_edge_is_underestimated():
     time = np.arange(0, 30e-6, 50e-9)
     for slope in [10e6, 20e6, 40e6]:
         vout = trapezoid(time, 0.0, 1.2, 0.53e-6, slope, 5.51e-6, slope)
-        assert dut.find_slew_rate(time, vout) <= slope * 1e-6
+        assert dut.find_slew_rate(time, vout, vdd=VDD) <= slope * 1e-6
 
 
 def test_slew_rate_flat_output_is_zero():
     # a railed output that never moves has no edge: SR = 0 (valid simulation, failing spec)
     dut = dut_testbench.DUT(YAML_PATH)
     time = np.arange(0, 30e-6, 50e-9)
-    assert dut.find_slew_rate(time, np.full_like(time, 3e-3)) == 0.0
+    assert dut.find_slew_rate(time, np.full_like(time, 3e-3), vdd=VDD) == 0.0
     assert dut.slew_rate_rise == 0.0 and dut.slew_rate_fall == 0.0
 
 
