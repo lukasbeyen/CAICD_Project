@@ -131,6 +131,7 @@ def simulate(text, label, design, folder, n_runs):
     dut = dut_testbench.DUT(YAML_PATH)
     dut.netlist_path = path
     dut.output_netlists_folder = dut.output_files_folder = dut.logs_folder = folder
+    dut.sim_timeout = 600.0  # the 0.1 ns ground truth takes ~40 s, longer than the testbench's 20 s timeout
     netlist = dut.create_new_netlist(design, process='TT', temp_pvt=27, vdd=VDD)
     times = []
     for _ in range(n_runs):
