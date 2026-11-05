@@ -69,11 +69,8 @@ class CircuitEnv(gym.Env):
         TODO: Implement a function that converts normalized actions of range [-1, 1] to actual parameter values.
         
         """
-        #Check if valid action
-        if not self.action_space.contains(action):
-            raise ValueError(
-                f"Action must have shape ({self.n_actions},) and values in [-1, 1]."
-            )
+        #Clip to valid action
+        action = np.clip(action, -1, 1)
         
         refined_params = {}
         for i, (name, (min_val, max_val, step)) in enumerate(self.dict_params.items()):
@@ -97,9 +94,9 @@ class CircuitEnv(gym.Env):
         Returns:
             dict: A dictionary containing the measured metrics from the simulation.
         """
-        self.simulation_engine.create_new_netlist(parameters=params, process=self.pvt_corner['process'],
+        netlist =self.simulation_engine.create_new_netlist(parameters=params, process=self.pvt_corner['process'],
                                                   temp_pvt=self.pvt_corner['temp'], vdd=self.pvt_corner['voltage'])
-        info = self.simulation_engine.simulate(self.simulation_engine.random_name)
+        info = self.simulation_engine.simulate(netlist)
         if info != 0:
             print("Simulation failed")
             return None
@@ -123,6 +120,10 @@ class CircuitEnv(gym.Env):
             dict: A dictionary containing the normalized specifications, with the same keys
                   as `spec_dict`.
         """
+
+        if spec_dict is None:
+            raise ValueError("spec_dict cannot be None.")
+            
         #Check if spec_dict is in observation space
         if not self.observation_space.contains(np.array(list(spec_dict.values()))):
             raise ValueError(
@@ -134,7 +135,8 @@ class CircuitEnv(gym.Env):
             if spec not in self.dict_targets:
                 raise ValueError(f"Specification '{spec}' not found in target specifications.")
             goal_value = self.dict_targets[spec]
-            normalized_value = (value - goal_value) / (value + goal_value)
+            # Clip to negative values to avoid negative normalized values
+            normalized_value = (value - goal_value) / (abs(value) + abs(goal_value))
             normalized_specs[spec] = normalized_value
 
         return normalized_specs
@@ -263,8 +265,8 @@ class CircuitEnv(gym.Env):
         UPPER_BOUND_SPECS = ["noise"]
         LOWER_BOUND_SPECS = ["gain", "phm", "slewRate", "ugbw"]
         for spec in self.hard_constraints:
-            if spec not in norm_specs:
-                raise ValueError(f"Specification '{spec}' not found in normalized specifications.")
+            # if spec not in norm_specs:
+            #     raise ValueError(f"Specification '{spec}' not found in normalized specifications.")
             spec_value = norm_specs[spec]
             if spec in UPPER_BOUND_SPECS:
                 reward -= max(0, spec_value) * self.spec_weights[spec]
@@ -282,7 +284,7 @@ class CircuitEnv(gym.Env):
                 if spec not in norm_specs:
                     raise ValueError(f"Specification '{spec}' not found in normalized specifications.")
                 spec_value = norm_specs[spec]
-                reward -= 0.05 * spec_value * self.spec_weights[spec]
+                reward -=  spec_value * self.spec_weights[spec]
             
         else:
             # If not, add weighted reward components of the optimization targets.
