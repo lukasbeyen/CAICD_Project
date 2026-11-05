@@ -53,9 +53,14 @@ PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3).
 1. **Action mapping maximum:** `action_refine`'s floor with (n_steps − 1) (the TAs' mapping, copied exactly) means the
    YAML maximum is never reached (L = 225 nm unreachable, 180 nm only at a = +1, W ≤ 2.5 µm, Cc ≤ 9.8 pF). Intended,
    or may we fix it?
+   - Where it comes from: inferred from `references.csv`. It's the only one of 5 candidates that reproduces all 100
+     pairs. The reference actions lie in −0.957 … 0.949, so the behaviour at ±1 is extrapolated.
+   - It looks like a grid built with `np.arange(min, max, step)`, which leaves out the max.
 2. **Milestone 4:** Antigravity CLI only, or may we also call Gemini through google-genai?
 3. **Please confirm** the weight 0.05 on r_T while specs fail. It already follows from `references.csv`; once
    confirmed, the `TODO(TA)` comment in `circuit_env.py` l.67 can go.
+4. **Negative phase margin:** we clip PM to ≥ 0 before normalizing (so PM ≤ 0 → z = −1). The references all have
+   PM > 0 (44–103°), so they can't tell. Do you do the same?
 
 **Answered by the TAs**
 - **Temperature 27 °C:** the TAs said that some specs (e.g. gain and GBW) only pass at 27 °C, so it's normal that the
@@ -132,8 +137,9 @@ assignment itself. Everything else below is a fix or an addition we needed along
 - We filled in the six TODO methods: action → sizing, simulate, normalize, reset, step and reward.
 - The constructor keeps the course's signature. Two settings are plain attributes in `__init__`: the penalty for a
   failed simulation (−6) and the weight of the area/current term while specs fail (0.05).
-- `evaluate()` now also computes the reward, logs every simulation (`log_design()`) and keeps the netlists of designs
-  that meet all specs. `finalize()` draws the Pareto plot at the end of a run.
+- `evaluate()` is the course's 3 lines. `step()` computes the reward (−6 for a failed sim), keeps the netlists of
+  designs that meet all specs and logs the design (`log_design()`). `reset()` only logs its random design, without a
+  reward. `finalize()` draws the Pareto plot at the end of a run.
 - `reset()` and `step()` follow the course docstrings step by step (numbered comments, Lukas's style), including the
   plots: the max-FoM plot on every step that meets all specs, the learning curve every 10 steps.
 - Every simulation is run at the env's PVT corner (TT, 1.2 V, 27 °C), and `self.counter` counts every simulation,
@@ -305,8 +311,9 @@ filled them in one at a time, with one commit per step, and then wrote a test fi
   worst case `[+1, +1, −1, +1, −1, −1, −1]` (area, current, gain, noise, PM, SR, UGBW; finite, in range, no valid
   design produces it).
 - **Episode:** `reset()` simulates a random design (seeded `self.np_random`) → s₀; then 10 `step()`s; `done` after 10 is a
-  *time limit*, not a goal. The score = sum of the 10 step rewards (the reset design isn't the agent's choice).
-- **Logging** (`evaluate` l.156, `log_design` l.181): every simulation is one row in `runs/<run_id>/designs.csv`:
+  *time limit*, not a goal. The reset design is simulated (counted) and logged, but **not rewarded** (template
+  behaviour, Brent's choice). The score = sum of the 10 step rewards.
+- **Logging** (`log_design` l.166, called from `reset` and `step`): every simulation is one row in `runs/<run_id>/designs.csv`:
   - bookkeeping: sim, episode, step (0 = reset), netlist, temp;
   - the 20 params, the 7 raw metrics, the 7 `norm_*`;
   - reward, failed, **timeout**, hard_satisfied.
@@ -712,4 +719,60 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
 - **Correction to the comparison above:** "raises end a long run" holds for the `contains()` data checks, not for
   these configuration checks (they fail on the first simulation).
 - **Verification:** pytest 95 passed.
+
+### 2026-11-05 — 2.8: `evaluate` and `step` back to the template; reset designs not rewarded
+- **Goal (Brent):**
+  1. `evaluate`/`step` as in the course template; the reset design no longer gets a reward, and that's OK;
+  2. reason about the clip of negative PM;
+  3. is `self.last_netlist_path` needed?
+  4. recheck the 11 000-sims reasoning;
+  5. where the mapping formula comes from.
+- **What changed (`circuit_env.py`, branch `feat/td3`):**
+  - `evaluate` is the course's 3 lines again.
+  - `step` follows the docstring steps 1–10 in order:
+    - 2: the reward, or the −6 penalty for a failed sim;
+    - 4: `reward_history` + score;
+    - 5: creates the output folders;
+    - 6: the plot + keeps the netlist + the solutions CSV;
+    - 7: the counters, then `log_design`.
+  - `reset` calls `log_design()` without a reward (reward/hard_satisfied empty in `designs.csv`).
+  - `log_design(reward=None, hard_satisfied=None)` works out `failed` itself.
+  - The attributes `self.reward`, `self.hard_satisfied`, `self.failed` are gone.
+  - Tests: the failed/feasible tests now use `step` (reset isn't rewarded), the score test uses all of
+    `reward_history`, and the logging test checks the empty reward of the reset row.
+- **Consequences:**
+  - `reward_history` (and so the course's max-FoM plot) now has one point per *step*, not per simulation: about 9 %
+    fewer points than simulations. For the report's "max FoM vs simulation", use `designs.csv` (`sim` column).
+  - A random reset design that happens to meet all specs isn't kept. That's rare: 0 of 150 random designs (and 0
+    of 40 earlier) met all specs.
+- **2. The PM clip:** 150 random designs:
+  - PM < 0 in only 2 (both ≈ −45°, gain ≈ 9 V/V, i.e. not near a good design);
+  - PM = 0 (no unity-gain crossing) in 64, which are z = −1 anyway.
+
+  Unclipped, those two would get z ≈ −6 … −8, and PM < −60° would even give z > +1 ("met"). Verdict: the clip is
+  fine for training. It keeps the state and the reward bounded (r_H ≥ −5, the −6 penalty stays the worst value);
+  the lost information (−5° vs −47°) concerns rare designs whose gain term already dominates. Added as TA question 4.
+- **3. `self.last_netlist_path`:** needed as an attribute. `step()` copies that file when the design meets all specs,
+  and `log_design()` writes its name, both after `simulate()` returned. Alternatives: rebuild the path from
+  `engine.random_name` (duplicates the wrapper's naming rule), or return it from `simulate` (changes the course's
+  return value). Not changed.
+- **4. The 11 000 sims:** still correct. `reset()` still *simulates* its random design; only its reward is dropped.
+  The budget counts ngspice runs, so 10 steps cost 11 sims; T = 10 000 → 1000 episodes → 11 000 sims. Without a
+  counter the runner can only approximate it: T = 4540 → 4994 sims, T = 4550 → 5005 (over). `self.counter` is the
+  course's own attribute (it's in the template `__init__`, never incremented); we increment it in `simulate`.
+  Real smoke run: 3 episodes = 30 steps = 33 simulations, counter 33, 30 rewarded rows.
+- **5. The mapping formula:** reverse-engineered from `references.csv`. It's not in any TA code: `baseline_runner.py` is
+  still an empty stub, and the course docstring gives no formula. Candidates:
+
+  | candidate | matches |
+  |---|---|
+  | `floor((a+1)/2·(n_steps−1))` (ours) | 100/100 |
+  | `floor((a+1)/2·n_steps)` | 39 |
+  | `round((a+1)/2·(n_steps−1))` | 39 |
+  | `floor(… (n_steps+1))`, capped | 12 |
+  | linear + nearest grid point | 0 |
+
+  Likely origin: a grid from `np.arange(min, max, step)` (which leaves out max) indexed with
+  `floor((a+1)/2·(len−1))`. The references never hit ±1, so the end behaviour is extrapolated. That's TA question 1.
+- **Verification:** pytest 95 passed; the 3-episode real ngspice smoke run above.
 

@@ -72,7 +72,7 @@ class CircuitEnv(gym.Env):
         # TODO(TA): weight of r_T while specs fail: 0.05 (slides) or the spec_weights of TwoStage.yaml?
         self.target_weight_when_failing = 0.05
 
-        self.reward_history = []  # the reward (FoM) of every simulation, reset() included
+        self.reward_history = []  # the reward (FoM) of every step (the random design of reset() is not rewarded)
         self.score_history = []  # the score (sum of the step rewards) of every finished episode
         self.score = 0.0
         self.episode = 0  # number of reset() calls
@@ -159,47 +159,29 @@ class CircuitEnv(gym.Env):
         return normalized_specs
 
     def evaluate(self, action):
-        # every simulation, from reset() or step(), goes through here: map, simulate, normalize ...
         self.param_values = self.action_refine(action)
         self.real_specs = self.simulate(self.param_values)
         self.cur_norm_specs = self.normalize_specs(self.real_specs)
 
-        # ... score it (so the random design of reset() has a FoM too) ...
-        self.failed = self.real_specs is None
-        if self.failed:
-            self.reward, self.hard_satisfied = self.failed_penalty, False
-        else:
-            self.reward, self.hard_satisfied = self.reward_computation(self.cur_norm_specs)
-        self.reward_history.append(self.reward)
-
-        # ... keep the netlist of a design that meets all specs (clean.sh deletes no_backup/; needed for
-        # Solutions/) and add it to the course's solutions CSV (Pareto plot) ...
-        if self.hard_satisfied:
-            os.makedirs(os.path.join(self.run_folder, 'feasible_netlists'), exist_ok=True)
-            shutil.copy(self.last_netlist_path, os.path.join(self.run_folder, 'feasible_netlists'))
-            os.makedirs('solutions', exist_ok=True)  # save_solutions_csv writes ./solutions/<run_id>.csv
-            save_solutions_csv(self.run_id, self.counter, self.param_values, self.real_specs, self.reward)
-
-        # ... and log it: one row in runs/<run_id>/designs.csv
-        self.log_design()
-
-    def log_design(self):
+    def log_design(self, reward=None, hard_satisfied=None):
         """
         Append the current simulation to runs/<run_id>/designs.csv: one row per ngspice run (step 0 = reset).
         Metrics are the raw measured values (empty for a failed sim), norm_* the values the agent sees.
+        reward and hard_satisfied stay empty for the random design of reset(), which is not rewarded.
         timeout marks the failed sims that were stopped by the simulation timeout (so they can be counted).
         """
+        failed = self.real_specs is None
         row = {'sim': self.counter, 'episode': self.episode, 'step': self.episode_steps,
                'netlist': os.path.basename(self.last_netlist_path), 'temp': self.pvt_corner['temp']}
         row.update(self.param_values)
         for name in self.dict_targets:
-            row[name] = '' if self.failed else self.real_specs[name]
+            row[name] = '' if failed else self.real_specs[name]
         for name in self.dict_targets:
             row['norm_' + name] = self.cur_norm_specs[name]
-        row['reward'] = self.reward
-        row['failed'] = self.failed
+        row['reward'] = reward
+        row['failed'] = failed
         row['timeout'] = self.simulation_engine.timed_out
-        row['hard_satisfied'] = self.hard_satisfied
+        row['hard_satisfied'] = hard_satisfied
 
         os.makedirs(self.run_folder, exist_ok=True)
         csv_path = os.path.join(self.run_folder, 'designs.csv')
@@ -240,7 +222,8 @@ class CircuitEnv(gym.Env):
 
         Note:
         - The observation is returned as a NumPy array of type float32.
-        - This random design is a real simulation: it counts towards the budget and is logged like a step.
+        - This random design is a real simulation: it counts towards the budget (self.counter, in simulate) and is
+          logged, but it gets no reward (only step() computes rewards).
         """
         super().reset(seed=seed)  # seeds self.np_random when a seed is given
         self.episode += 1
@@ -250,6 +233,7 @@ class CircuitEnv(gym.Env):
         random_action = self.np_random.uniform(-1, 1, self.n_actions)
         # 3. Evaluate the environment with the generated random action
         self.evaluate(random_action)
+        self.log_design()  # every simulation gets a row in designs.csv; this one without a reward
         # 4. Reset the episode score to zero
         self.score = 0.0
         # 5. Construct the initial observation: the normalized specs, in the order of TwoStage.yaml's targets
@@ -281,22 +265,33 @@ class CircuitEnv(gym.Env):
             - done (bool): A flag indicating whether the episode has ended.
             - info (dict): Additional information, including whether the goal state was reached.
         """
-        # 7. (first) Increment the environment and episode step counters, so this design is logged as step 1..10
-        self.env_steps += 1
-        self.episode_steps += 1
         # 1. Evaluate the given action
         self.evaluate(action)
-        # 2. The reward and hard_satisfied were computed in evaluate() (-6 for a failed simulation)
-        reward, hard_satisfied = self.reward, self.hard_satisfied
-        # 3. Update the current observation
+        # 2. Compute the reward and check if the hard constraints are satisfied (a failed simulation: the penalty)
+        failed = self.real_specs is None
+        if failed:
+            reward, hard_satisfied = self.failed_penalty, False
+        else:
+            reward, hard_satisfied = self.reward_computation(self.cur_norm_specs)
+        # 3. Update the current observation: the normalized specs, in the order of TwoStage.yaml's targets
         ob = np.array(list(self.cur_norm_specs.values()), dtype=np.float32)
-        # 4. Update the score (evaluate() already appended the reward to the reward history)
+        # 4. Append the reward to the reward history and update the score
+        self.reward_history.append(reward)
         self.score += reward
         # 5. Create output directories if they do not exist
         os.makedirs(os.path.join('output_figs', str(self.run_id)), exist_ok=True)
-        # 6. If the goal state is reached, plot the running maximum reward
+        os.makedirs(os.path.join(self.run_folder, 'feasible_netlists'), exist_ok=True)
+        os.makedirs('solutions', exist_ok=True)  # save_solutions_csv writes ./solutions/<run_id>.csv
+        # 6. If the goal state is reached, plot the running maximum reward. Also keep the design: its netlist
+        #    (clean.sh deletes no_backup/; needed for Solutions/) and a row in the solutions CSV (Pareto plot)
         if hard_satisfied:
             plot_running_maximum(self.reward_history, self.run_id)
+            shutil.copy(self.last_netlist_path, os.path.join(self.run_folder, 'feasible_netlists'))
+            save_solutions_csv(self.run_id, self.counter, self.param_values, self.real_specs, reward)
+        # 7. Increment the environment and episode step counters
+        self.env_steps += 1
+        self.episode_steps += 1
+        self.log_design(reward, hard_satisfied)  # after 7, so this design is logged as step 1..10 of its episode
         # 8. Check if the maximum steps per episode have been reached (a time limit, not a goal state)
         done = self.episode_steps >= self.max_steps_per_episode
         # 9. Every 10 steps, update the score history, also plot the learning curve, and reset the score
@@ -305,7 +300,7 @@ class CircuitEnv(gym.Env):
             plotLearning(self.score_history, self.run_id)
             self.score = 0.0
         # 10. Return the current observation, reward, done flag, and additional information
-        info = {'hard_satisfied': hard_satisfied, 'failed': self.failed,
+        info = {'hard_satisfied': hard_satisfied, 'failed': failed,
                 'timeout': self.simulation_engine.timed_out, 'specs': self.real_specs, 'sim': self.counter}
         return ob, reward, done, info
 

@@ -218,7 +218,6 @@ def test_failed_measurement_gives_the_penalty_and_worst_state(make_env):
     # state = worst case: -1 for gain/phm/slewRate/ugbw, +1 for noise/area/current
     env = make_env(metrics='broken')
     obs = env.reset(seed=0)
-    assert env.failed and env.reward == -6.0
     worst = {'area': 1.0, 'current': 1.0, 'gain': -1.0, 'noise': 1.0, 'phm': -1.0, 'slewRate': -1.0, 'ugbw': -1.0}
     assert list(obs) == [worst[name] for name in OBS_ORDER]
     obs, reward, done, info = env.step(np.zeros(env.n_actions))
@@ -246,7 +245,8 @@ def test_impossible_metric_is_a_failed_sim(make_env, name):
     # noise, current (which includes Ibias) and area are > 0 for any real circuit: <= 0 means broken data
     env = make_env(metrics=dict(TARGETS, **{name: 0.0}))
     env.reset(seed=0)
-    assert env.failed and env.reward == -6.0
+    _, reward, _, info = env.step(np.zeros(env.n_actions))
+    assert info['failed'] and reward == -6.0
 
 
 def test_failed_penalty_is_below_every_valid_reward():
@@ -273,6 +273,7 @@ def test_every_simulation_is_counted_and_logged(make_env):
     assert list(rows['step']) == [0, 1, 2, 3]
     assert set(env.param_ranges) <= set(rows.columns)
     assert {'reward', 'failed', 'timeout', 'hard_satisfied', 'norm_gain', 'gain', 'temp'} <= set(rows.columns)
+    assert pd.isna(rows['reward'][0]) and rows['reward'][1:].notna().all()  # the reset design gets no reward
 
 
 def test_simulations_use_the_env_pvt_corner(make_env):
@@ -285,8 +286,9 @@ def test_simulations_use_the_env_pvt_corner(make_env):
 def test_feasible_design_netlist_is_kept(make_env):
     # all specs met -> the netlist is copied to runs/<run_id>/feasible_netlists/ (clean.sh deletes no_backup/)
     env = make_env(metrics=TARGETS)
-    env.reset(seed=0)
-    assert env.hard_satisfied
+    env.reset(seed=0)  # reset() doesn't reward or keep designs: only step() does
+    _, _, _, info = env.step(np.zeros(env.n_actions))
+    assert info['hard_satisfied']
     assert len(os.listdir(os.path.join(env.run_folder, 'feasible_netlists'))) == 1
 
 
@@ -296,7 +298,7 @@ def test_episode_ends_after_10_steps(make_env):
     dones = [env.step(np.zeros(env.n_actions))[2] for _ in range(10)]
     assert dones == [False] * 9 + [True]
     assert len(env.score_history) == 1
-    assert env.score_history[0] == pytest.approx(sum(env.reward_history[1:]))  # the reset design is not in the score
+    assert env.score_history[0] == pytest.approx(sum(env.reward_history))  # 10 step rewards (reset isn't rewarded)
 
 
 def test_plots_follow_the_course_steps(tmp_path, monkeypatch):
