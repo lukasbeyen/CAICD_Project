@@ -1192,3 +1192,41 @@ hyperparameters and try to beat its FoM.
   fixed exploration noise, while SAC keeps exploring through its entropy term. So SAC's lead is not explained by its
   hyperparameters. **Decision (Brent):** stop stage C; our previous tuned values stay the candidate. The comparison with
   SAC waits for its best FoM over `sim ≤ 5000`.
+
+### 2026-11-05 — 3.6: final hyperparameters, final results, comparison with the SAC baseline
+**Goal:** Brent chose the final values (actor lr 1e-4 + w 1000) and the 3 existing runs with them as the final result.
+
+**What changed (branch `feat/td3`):**
+- `CAD/td3_runner.py` (`60bc219`): defaults `--w 1000`, `--pi_lr 1e-4` (σ 0.1, batch 128, critic lr 1e-3 unchanged).
+  `python td3_runner.py` without options now has exactly the settings of `B_pilr_w_s123456` (checked against its
+  `hyperparameters.json`: only `run_id` differs). The budget comment now says what the PDF says (comparison and
+  Solutions at 5k sims, no hard cap stated).
+- New `CAD/analysis/final_results.py`: the two required plots + the `Solutions/` folder.
+  - `CAD/output_figs/final_max_fom.png`: maximum FoM against the **simulation** number, the 3 seeds (the course's
+    `max_reward.png` has the step index on its x-axis).
+  - `CAD/output_figs/final_pareto.png`: current–area Pareto front of `B_pilr_w_s123456`: all 891 designs that met all
+    specs, the 9 Pareto designs, the best-FoM design.
+  - `Solutions/` (repo root, next to `CAD/`): the 9 Pareto netlists (from `runs/<run>/feasible_netlists`) +
+    `Solutions.csv` (sim, netlist, 20 parameters, 7 specs, reward). Not in `CAD/`: on macOS (case-insensitive)
+    `Solutions/` and the course's `CAD/solutions/` would be one folder. **Not committed yet** (new top-level folder in
+    the shared repo: Brent/Lukas decide).
+- Pareto rule: no other feasible design with both smaller-or-equal area and current (one strictly smaller);
+  duplicate (area, current) points counted once.
+
+**Final results** (TD3: σ 0.1, batch 128, w 1000, actor lr 1e-4, critic lr 1e-3, 5000 sims):
+
+| | seed 123456 | seed 1 | seed 2 | mean ± std |
+|---|---|---|---|---|
+| best FoM | 0.702 (sim 3724) | 0.660 (sim 3952) | 0.662 (sim 4615) | 0.675 ± 0.024 |
+| designs that met all specs | 891 | 403 | 187 | |
+
+Pareto front of seed 123456 (area µm² / current µA / FoM): 616/286/0.652, **657/246/0.702** (best FoM), 708/236/0.695,
+810/234/0.645, 865/234/0.618, 866/231/0.623, 923/229/0.601, 925/225/0.609, 1182/207/0.539. All meet every hard spec.
+
+**SAC baseline** (Brent, student server, 1 seed): best FoM **0.662**. Ours: mean 0.675, best 0.702, both other seeds at
+0.660–0.662. So our tuned TD3 is at least as good as SAC within 5k sims, and better on the default seed and on the
+mean, but one SAC seed is one sample.
+
+**For Brent:** for the report, run SAC on 2 more seeds (`python baseline_runner.py --seed 1 --run_id sac_s1`, `--seed
+2`) and take the best `reward` with `sim ≤ 5000` from each `designs.csv`; with the CSVs I can draw SAC's curve in
+`final_max_fom.png`. Decide whether `Solutions/` gets committed.
