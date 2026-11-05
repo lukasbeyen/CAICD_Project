@@ -48,17 +48,22 @@ runner fixes and tests done, tuning in progress (stage B running). Deadline: Sun
 
 ## Questions for the TAs
 **Open**
-1. **Action mapping maximum:** `action_refine`'s floor with (n_steps − 1) (the TAs' mapping, copied exactly) means the
-   YAML maximum is never reached (L = 225 nm unreachable, 180 nm only at a = +1, W ≤ 2.5 µm, Cc ≤ 9.8 pF). Intended,
-   or may we fix it?
-   - Where it comes from: inferred from `references.csv`. It's the only one of 5 candidates that reproduces all 100
-     pairs. The reference actions lie in −0.957 … 0.949, so the behaviour at ±1 is extrapolated.
-   - It looks like a grid built with `np.arange(min, max, step)`, which leaves out the max.
-2. **Milestone 4:** Antigravity CLI only, or may we also call Gemini through google-genai?
-3. **Please confirm** the weight 0.05 on r_T while specs fail. It already follows from `references.csv`; once
-   confirmed, the `TODO(TA)` comment in `circuit_env.py` l.67 can go.
-4. **Negative phase margin:** we clip PM to ≥ 0 before normalizing (so PM ≤ 0 → z = −1). The references all have
-   PM > 0 (44–103°), so they can't tell. Do you do the same?
+1. **Simulation budget:** is 5k simulations a hard cap per run, or only the point where results are compared (PDF:
+   "compare … within 5k simulations", "Pareto solutions (after 5k simulations)")? Our runner stops at 5000
+   (`--max_sims`); Lukas's and the SAC runner go to ~11 000.
+2. **Solutions folder:** the Pareto front of one run (we use our best seed, `B_pilr_w_s123456`), or of all our runs
+   together?
+3. **Baseline comparison:** is one SAC run enough, or do you expect several seeds (we compare TD3 over 3 seeds)?
+4. **Negative phase margin** (low impact): a PM ≤ 0 gives z = −1 in our normalization (2 in 150 random designs). The
+   references all have PM > 0 (44–103°), so they can't tell. Do you do the same?
+5. **Please confirm** the weight 0.05 on r_T while specs fail (low impact: it already follows from `references.csv`;
+   once confirmed, the `TODO(TA)` comment in `circuit_env.py` can go).
+
+**Answered by the milestone 4 template / slides (lab sessions 3–4)**
+- **Action mapping maximum** (was question 1): `sizing_tools.py` says "use the same `np.arange(min, max, step)` grids as
+  phase one". The grid leaves out the YAML max on purpose, so `floor((a+1)/2·(n_steps−1))` is their convention.
+- **Milestone 4 tool** (was question 2): Antigravity CLI with MCP tools and skills (slides 3–16); the slides allow
+  "more/better tools" than the 4 examples.
 
 **Answered by the TAs**
 - **Temperature 27 °C:** the TAs said that some specs (e.g. gain and GBW) only pass at 27 °C, so it's normal that the
@@ -1230,3 +1235,46 @@ mean, but one SAC seed is one sample.
 **For Brent:** for the report, run SAC on 2 more seeds (`python baseline_runner.py --seed 1 --run_id sac_s1`, `--seed
 2`) and take the best `reward` with `sim ≤ 5000` from each `designs.csv`; with the CSVs I can draw SAC's curve in
 `final_max_fom.png`. Decide whether `Solutions/` gets committed.
+
+### 2026-11-05 — 4.1 + 4.2: milestone 4 branch; `sizing_tools.py` filled in (+ `tests/test_sizing_tools.py`)
+**Goal:** the backend of the MCP tools (plan: `~/.claude/plans/streamed-sauteeing-moonbeam.md`). Brent's decisions:
+agents by role (analyst → designer → RL operator → reviewer), and an optional `reason` on the tools for traceability.
+
+**What changed (branch `feat/m4-harness`, from `feat/td3`):**
+- `a4076e3`: `CAD/sizing_tools.py` + `CAD/mcp_server.py` committed **unchanged** (course template), so the diffs show
+  only our work. The template hyperparameters stay (σ 0.1, lr 3e-4 / 3e-4, batch 100).
+- `CAD/sizing_tools.py`, the 7 TODOs:
+  - `_validate_parameters`: exactly the 20 YAML names, finite reals (no bool/str), on the `np.arange(min, max, step)`
+    grid (= `action_refine`'s grid, the YAML max excluded) within 1e-6 of a grid index; returns `min + idx·step`,
+    exactly the number `action_refine` makes (3.0 → 3 for a multiplicity; JSON sends floats). Off-grid → a
+    `ValueError` with the allowed range; nothing is simulated.
+  - `_record`: scores with the env's own `normalize_specs` + `reward_computation` (so the same reward the agent gets);
+    a failed / non-finite result is refused; stored in `self.candidates` by parameter tuple (a repeat replaces).
+  - `simulate`: validate → the **separate `evaluation_env`** → record. The RL episode, buffer and weights stay untouched.
+  - `_run_steps`: the episode loop across calls: reset when no episode is running (the first reset seeded), action =
+    `action_space.sample()` (warmup) or `agent.select_action` (train), `env.step`, a failed sim is not pushed to the
+    buffer, one `update_parameters` per new transition in training. `./clean.sh` every 100 calls (as `td3_runner`).
+    An unexpected error mid-batch keeps the finished steps and says how many.
+  - `warmup` / `train`: 1…1000 steps; `train` refuses before `batch_size` experiences ("call warmup first").
+  - `get_status`: counters, the targets, the top-k distinct designs by reward (copies).
+- Added: `reason` arguments; `_record_and_log` writes **every** simulator call (reset/warmup/train/simulate, failed
+  ones too) to `runs/<run_id>/harness_history.csv` (time, elapsed s, call number, source, reason, netlist, 20
+  params, 7 specs, reward, hard_satisfied, failed) and keeps the netlists of designs that meet all specs in
+  `runs/<run_id>/feasible_netlists/`.
+- `CAD/tests/test_sizing_tools.py`: 23 tests (fake simulator): grid = `np.arange` = `action_refine`, round-off and
+  `3.0 → 3`, 7 kinds of invalid values rejected without simulating, missing/unknown names, simulate leaves the RL
+  state alone and scores like the env, feasible netlist kept, warmup = n transitions + 0 updates, train needs
+  `batch_size` then 1 update per transition, bounded step counts, failed sims logged but not in buffer/candidates,
+  mid-batch error keeps the finished steps, same seed = same designs, ranking + copies + bounds of `get_status`,
+  one history row per call with source and reason.
+
+**Verification:**
+- Mutation check: 5 deliberate bugs (failed sim into the buffer, simulate in the RL env, no update in train, the
+  grid max allowed, a wrong step count) are each caught by the tests.
+- Real ngspice: TA reference design 1 via `simulate`: all 7 specs within 0.6 % of `references.csv`, reward −0.2533
+  (TA −0.2528). `warmup(20)` → 20 transitions, 22 sims, 0 updates; `train(10)` → 10 transitions, 11 sims, 10
+  updates; `harness_history.csv` rows = `simulator_calls` (133).
+- Our code still parses as Python 3.9.
+
+**For Brent:** the line-by-line explanation follows in the chat. Next: 4.3, the `reason` argument in `mcp_server.py`
+plus an MCP client test over stdio.
