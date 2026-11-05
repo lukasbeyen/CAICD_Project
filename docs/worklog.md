@@ -1130,3 +1130,37 @@ Same seeds side by side (best FoM, ours / Lukas): 123456: 0.702 / 0.669, 1: 0.66
 
 **For Brent / Lukas:** ask Lukas at which simulation his 0.711 was found (`designs.csv`, `sim ≤ 5000`). Choose the final
 values: best mean FoM → ours; many feasible designs / Pareto → his.
+
+### 2026-11-05 — 3.6 prep: the SAC baseline's hyperparameters, read from the compiled runner
+**Goal:** know the TAs' baseline settings before comparing with it (the `.so` can't run on our ARM VM).
+
+**How:** `sac_runner.cpython-39-x86_64-linux-gnu.so` is compiled with Nuitka, which stores the module's constants as
+typed values: `l` + a 7-bit varint for an int, `f` + an 8-byte little-endian double for a float, `u` + text for a
+string. Each `add_argument` default sits right before its help text. Decoded with a short Python script (no
+execution of the binary), cross-checked with the help texts (e.g. `l c0 c4 07` = 123456 = "default: 123456").
+
+| argument | default | note |
+|---|---|---|
+| `--seed` | 123456 | |
+| `--batch_size` | 100 | |
+| `--w` (warm-up steps) | 100 | |
+| `--pi_lr` | 3e-4 | policy (actor) |
+| `--q_lr` | 3e-4 | critics |
+| `--alpha_lr` | 3e-4 | SAC only: entropy temperature |
+| `--init_temperature` | 0.1 | SAC only: initial α |
+| `--target_update_interval` | 1 | SAC only |
+| `--gamma` / `--tau` | 0.99 / 0.005 | same as ours |
+| `--hidden_size` | 256 | same network width as our TD3 |
+| `--T` | 10 000 steps | ≈ 11 000 sims, no simulation stop |
+| `--replay_size` | 1 000 000 | |
+| `--noise_sigma` | 0.1 | "unused placeholder to keep parity with TD3 args" (SAC explores through its stochastic policy) |
+| `--actor_update_interval` | 1 | "kept for interface compatibility (unused)" |
+
+**Runner structure** (from the names it uses): the same as the course `td3_runner.py`: `readParser`, `warmup_exploration`,
+`train`, `train_policy` (`update_parameters(memory=..., update=...)`), `main`; `./clean.sh` every 100 steps; seeds only
+`np.random` and `torch` (no `env.np_random` / `action_space.seed`, so not exactly reproducible); no `counter` /
+budget stop. It takes the usual command-line options (`sr.main()` parses `sys.argv`).
+
+**Consequence for the comparison (3.6):** the baseline runs ~11 000 sims by default → compare on its **first 5000
+simulations** (`designs.csv`, `sim ≤ 5000`; same env, so same logging and FoM), and run it on several seeds
+(`python baseline_runner.py --seed 1 --run_id sac_s1`, …) because one seed is one sample.
