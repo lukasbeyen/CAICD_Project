@@ -1,0 +1,91 @@
+TwoStage_opamp_netlist
+
+.include "ngspice_interface/files/spice_models/p045_TT.sp"
+
+.param wp1=1e-06 lp1=9e-08 mp1=4
+.param wn1=1.4999999999999998e-06 ln1=9e-08 mn1=10
+.param wn3=1e-06 ln3=9e-08 mn3=4
+.param wp3=1.4999999999999998e-06 lp3=9e-08 mp3=8
+.param wn4=1e-06 ln4=9e-08 mn4=10
+.param wn5=1e-06 ln5=9e-08 mn5=16
+.param cap=3.0000000000000003e-13
+.param res=9800.0
+
+.param ibias=30u
+.param cload=10p
+.param vcm=0.6
+
+.param VDD=1.2
+.param temp_pvt=27
+.param trf=0.5u
+.param period=10u
+.param vhigh=VDD
+ 
+mp1 net4 net4 VDD VDD pmos w=wp1 l=lp1 m=mp1
+mp2 net5 net4 VDD VDD pmos w=wp1 l=lp1 m=mp1
+mn1 net4 net2 net3 net3 nmos w=wn1 l=ln1 m=mn1
+mn2 net5 net1 net3 net3 nmos w=wn1 l=ln1 m=mn1
+mn3 net7 net7 VSS VSS nmos w=wn3 l=ln3 m=mn3
+mn4 net3 net7 VSS VSS nmos w=wn4 l=ln4 m=mn4
+mp3 net6 net5 VDD VDD pmos w=wp3 l=lp3 m=mp3
+mn5 net6 net7 VSS VSS nmos w=wn5 l=ln5 m=mn5
+cc net5 net8 {cap}
+rc net8 net6 {res}
+
+ibias VDD net7 ibias
+
+Vicm VCM VSS dc=vcm
+Vinput aid VSS dc=0.0 ac=1.0 PULSE({-VHIGH/2} {VHIGH/2} {trf} {trf} {trf} {0.5*period-trf} {period})
+ein1 net1 VCM aid 0 0.5
+ein2 net2 VCM aid 0 -0.5
+
+vdd VDD 0 dc=VDD
+vss VSS 0 dc=0
+CL net6 0 {cload}
+
+* set temperature
+.temp {temp_pvt}
+
+* transient step control. With ngspice's default (trtol=7) the fast rising edge of the output falls between the
+* 50 ns steps, and the measured slew rate was up to 72 % too low. trtol=0.1 makes the local-truncation-error
+* control stricter: small steps only where the waveform changes fast (the edges), still 50 ns where it is flat.
+* The slew rate is then within 0.6 % of a 0.1 ns simulation, at ~0.2 s instead of ~0.12 s per simulation
+* (~ +6 min per 5000 simulations). It only acts on the transient: gain, UGBW, PM, noise, current and area are
+* unchanged (checked on the 5 reference designs and on random designs).
+.options trtol=0.1
+
+.control
+run
+set units=degrees
+set wr_vecnames
+option numdgt=7
+
+* transient analysis
+tran 50n 30u
+* save Vout data in a file named 'tran_TwoStage.csv'
+* columns: time, v(net6)
+wrdata /home/brentvm/projects/CAICD-shared/CAD/no_backup/output_files/tran_TwoStage_1793901272_ycflaiwjxm.csv v(net6)
+
+* ac analysis
+ac dec 10 1 1T
+* save Vout data in a file named 'ac_TwoStage.csv'
+* columns: frequency, real(v(net6)), imag(v(net6)); the differential input is 1 V, so v(net6) is the gain
+wrdata /home/brentvm/projects/CAICD-shared/CAD/no_backup/output_files/ac_TwoStage_1793901272_ycflaiwjxm.csv v(net6)
+
+* noise analysis
+* calculate the output noise and save it in a file named 'noise_TwoStage.csv'
+* integrated over the same band as the ac analysis; plot noise2 holds the integrated noise
+* columns: onoise_total (Vrms), written twice because this plot has no scale vector
+noise v(net6) Vinput dec 10 1 1T
+wrdata /home/brentvm/projects/CAICD-shared/CAD/no_backup/output_files/noise_TwoStage_1793901272_ycflaiwjxm.csv noise2.onoise_total
+
+* dc analysis
+op
+* save the total current consumption in a file named 'dc_TwoStage.csv'
+* columns: v(net4) (an op plot has no scale vector, so ngspice puts its first vector here), i(vdd)
+* i(vdd) is negative: the supply delivers current, so dut_testbench.py uses -i(vdd)
+wrdata /home/brentvm/projects/CAICD-shared/CAD/no_backup/output_files/dc_TwoStage_1793901272_ycflaiwjxm.csv i(vdd)
+
+.endc
+
+.end
