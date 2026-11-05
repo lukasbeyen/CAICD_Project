@@ -35,7 +35,7 @@ def create_server(experiment):
                 raise ToolError(str(error)) from error
 
     @server.tool()
-    def simulate(parameters: dict[str, StrictFloat]) -> dict[str, Any]:
+    def simulate(parameters: dict[str, StrictFloat], reason: str = "") -> dict[str, Any]:
         """Simulate a complete physical design on the YAML parameter grids.
 
         Supply all 20 named parameters: multiplicities are counts, widths/lengths
@@ -45,29 +45,33 @@ def create_server(experiment):
         weights, or the current episode. Uses one simulator call.
         Specs: area m^2, current A, gain V/V, noise V RMS, phm degrees,
         slewRate rising 10-90% V/us, and ugbw Hz. Higher reward is better.
+        reason: why this design (hypothesis -> expected effect on the specs);
+        stored with the design in the experiment history.
         """
-        return call("simulate", parameters=parameters)
+        return call("simulate", parameters=parameters, reason=reason)
 
     @server.tool()
-    def warmup(n_steps: StrictInt) -> dict[str, Any]:
+    def warmup(n_steps: StrictInt, reason: str = "") -> dict[str, Any]:
         """Add n_steps random RL transitions (1..1000), without updating weights.
 
         Continue the shared buffer and episode. Return status, best candidates,
         experiences_added, simulator_calls_used, and updates_performed (zero).
         Episode resets use additional simulations. Prefer small batches.
+        reason: why random exploration now; stored with every design it makes.
         """
-        return call("warmup", n_steps=n_steps)
+        return call("warmup", n_steps=n_steps, reason=reason)
 
     @server.tool()
-    def train(n_steps: StrictInt) -> dict[str, Any]:
+    def train(n_steps: StrictInt, reason: str = "") -> dict[str, Any]:
         """Continue TD3 for n_steps new environment transitions (1..1000).
 
         Require warmup to fill at least batch_size experiences (default 100).
         Append new experiences and learn from the shared replay buffer. Actor
         updates follow TD3's delay. Return progress, per-call counts, and best
         candidates by reward. Resets cost extra simulations. Prefer small batches.
+        reason: why RL training now; stored with every design it makes.
         """
-        return call("train", n_steps=n_steps)
+        return call("train", n_steps=n_steps, reason=reason)
 
     @server.tool()
     def get_status(k: StrictInt = 5) -> dict[str, Any]:

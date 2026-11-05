@@ -1278,3 +1278,16 @@ agents by role (analyst → designer → RL operator → reviewer), and an optio
 
 **For Brent:** the line-by-line explanation follows in the chat. Next: 4.3, the `reason` argument in `mcp_server.py`
 plus an MCP client test over stdio.
+
+### 2026-11-05 — 4.3: `mcp_server.py`: the `reason` argument; stdio test
+**What changed:**
+- `CAD/mcp_server.py`: `simulate`, `warmup` and `train` take an optional `reason: str = ""` and pass it to the
+  backend, which stores it with every design in `harness_history.csv`. The docstrings (what the LLM reads) say what
+  to put there ("hypothesis -> expected effect on the specs"). Nothing else changed: same tool names, the lock, the
+  stdout redirect.
+- New `CAD/tests/test_mcp_server.py`: starts the real `mcp_server.py` as a subprocess with the `mcp` package's stdio
+  client, the way agy does: the 4 tools are listed, `reason` is in the schemas and optional, `get_status` of a fresh
+  experiment answers (0 calls), and an incomplete design comes back as a readable tool error, not a server crash.
+- Note: `mcp` 2.3 uses snake_case fields (`input_schema`, `is_error`).
+
+**Verification:** all tests pass (120).
