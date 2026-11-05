@@ -25,7 +25,7 @@ def runs(tmp_path, monkeypatch):
 
 
 def test_curves_skip_failed_and_reset_rows_and_use_the_right_clock(runs):
-    harness = harness_vs_rl.harness_curve('h')
+    harness = harness_vs_rl.harness_curve(['h'])
     assert list(harness.sim) == [1, 3, 4, 5]                     # the failed call 2 is left out
     assert harness.minutes.iloc[0] == pytest.approx(0.5)
     rl = harness_vs_rl.rl_curve('r')
@@ -34,7 +34,7 @@ def test_curves_skip_failed_and_reset_rows_and_use_the_right_clock(runs):
 
 
 def test_milestones_give_time_and_simulations_to_each_level(runs):
-    harness = harness_vs_rl.harness_curve('h')
+    harness = harness_vs_rl.harness_curve(['h'])
     reached = harness_vs_rl.milestones(harness, best_harness=0.65)
     assert reached['first design meeting all specs'] == '2.5 min / 3 sims'
     assert reached['FoM >= 0.6'] == '4.5 min / 5 sims'
@@ -44,5 +44,12 @@ def test_milestones_give_time_and_simulations_to_each_level(runs):
 
 
 def test_improvements_are_the_simulations_that_raised_the_best_fom(runs):
-    trace = harness_vs_rl.improvements(harness_vs_rl.harness_curve('h'))
+    trace = harness_vs_rl.improvements(harness_vs_rl.harness_curve(['h']))
     assert list(trace.reason) == ['start', 'raise Rc', 'lower Cc']
+
+
+def test_a_session_over_two_server_runs_is_joined_without_the_pause(runs):
+    # an agy restart restarts the MCP server: run 2's clock and call numbers continue after run 1's last simulation
+    session = harness_vs_rl.harness_curve(['h', 'h'])
+    assert list(session.sim) == [1, 3, 4, 5, 6, 8, 9, 10]
+    assert session.minutes.iloc[4] == pytest.approx(4.5 + 0.5)  # run 1 ended at 4.5 min, run 2's first sim at 0.5 min

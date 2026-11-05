@@ -6,45 +6,52 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 `circuit_env.py` `reward_computation`.)
 
 ## Status
-**Where we are:** milestones 1 and 2 on `main` (PR #8). Milestone 3 on branch `feat/td3` (not pushed): agent,
-runner fixes and tests done, tuning in progress (stage B running). Deadline: Sun 8 Nov 2026, 23:59.
+**Where we are (Thu 5 Nov, evening):** all 4 milestones implemented and tested (129 tests pass); the report is next.
+- Milestones 1 and 2 on `main` (PR #8).
+- Milestone 3 on `feat/td3` (not pushed).
+- Milestone 4 on `feat/m4-harness` (from `feat/td3`, not pushed). **Current branch: `feat/m4-harness`.**
+- Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
+- Deadline: Sun 8 Nov 2026, 23:59.
 
-**Milestone 1 — simulator interface** (PDF §1)
+**Milestone 1: simulator interface** (PDF §1), on `main`
 - ✅ 1.0 ngspice wrapper: ngspice from PATH, real exit code, log files, output folder, 20 s timeout
 - ✅ 1.1 failure rules: no unity-gain crossing → UGBW = PM = 0 (valid but bad); broken output / error / timeout → failed
 - ✅ 1.2 netlist writes its results (`wrdata`), `.options trtol=0.1` for the slew-rate edge
 - ✅ 1.3 measurements: gain, UGBW, PM, slew rate (rising edge, VDD-limited levels), noise, current (area: course code)
-- ✅ 1.4 unit tests `test_measure.py` + `test_wrapper.py`, incl. the TAs' `references.csv` (all 7 metrics within 1 %)
-- ⬜ 1.R report section (material below: "For the report")
+- ✅ 1.4 unit tests `test_measure.py` (50) + `test_wrapper.py` (5), incl. the TAs' `references.csv` (all 7 within 1 %)
+- ⬜ 1.R report section (material: `docs/report/report_material.md` §1)
 
-**Milestone 2 — circuit environment** (PDF §2) — on `feat/env` (not on main)
-- ✅ 2.1 `action_refine` (the TAs' mapping; reproduces all reference actions → sizes)
-- ✅ 2.2 `simulate` (PVT corner, counter, failed sims)
-- ✅ 2.3 `normalize_specs` (with clipping), `reward_computation` (FoM of `docs/fom.md`)
+**Milestone 2: circuit environment** (PDF §2), on `main`
+- ✅ 2.1 `action_refine` (the TAs' mapping; all 100 reference action → size pairs)
+- ✅ 2.2 `simulate` (PVT corner, counter, failed sims) · ✅ 2.3 `normalize_specs`, `reward_computation` (the course FoM)
 - ✅ 2.4 `reset`, `step`, logging (`designs.csv`, feasible netlists), plots as in the course docstring, `finalize()`
-- ✅ 2.6 rebuilt on Lukas's simpler structure (numbered course steps), his bugs fixed — branch `feat/td3`
-- ✅ 2.5 unit test file `test_env.py` (hand calculations + TA references)
-- ⬜ 2.R report section
+- ✅ 2.5 `test_env.py` (25) + Lukas's `test_reference_rewards.py` · ✅ 2.6–2.9 rebuilt on Lukas's structure
+- ⬜ 2.R report section (material §2)
 
-**Milestone 3 — TD3 agent** (PDF §3) — guide with explanations, open decisions and step plan: `docs/milestone3_guide.md`
-- ✅ 3.1 `select_action` (exploration noise) · ✅ 3.2 `update_parameters` (twin critics, target smoothing, delayed actor,
-  soft updates) + `tests/test_agent.py` — branch `feat/td3`
-- ✅ 3.3 runner fixes (stop at 5000 sims, seeding, `finalize()`, yaml/hyperparameter copy, start values) + `tests/test_runner.py`
-- ✅ 3.4 5000-sim run with the start values (`runs/start_values_s123456`); plots: max FoM vs simulation, current–area Pareto front
-- 🔄 3.5 tune the 5 required hyperparameters (noise sigma, batch size, warm-up steps, actor lr, critic lr):
-  ✅ stage A (one at a time, 9 runs) · 🔄 stage B (3 seeds, 4 settings) · ⬜ Brent picks the final values
-- ⬜ 3.6 final run + plots + `Solutions/` · ⬜ compare with the TAs' baseline agent within 5k sims · ⬜ 3.R report section
-  `update_parameters(self, memory_batch, update)`; the `"???"` defaults of the 5 hyperparameters.
+**Milestone 3: TD3 agent** (PDF §3), on `feat/td3`
+- ✅ 3.1 `select_action` · ✅ 3.2 `update_parameters` + `test_agent.py` (11)
+- ✅ 3.3 runner fixes (5000-sim stop, seeding, run folder, `finalize()`) + `test_runner.py` (4)
+- ✅ 3.4 first full run (start values)
+- ✅ 3.5 tuning: stages A (9 runs), B + B2 (3 seeds), C (SAC's values); Lukas's values on 4 seeds
+- ✅ final values (Brent): σ 0.1, batch 128, w 1000, actor lr 1e-4, critic lr 1e-3 → the runner defaults
+- ✅ 3.6 final results: 3 seeds (0.675 ± 0.024, best 0.702), `final_max_fom.png`, `final_pareto.png`, `Solutions/`
+  (9 Pareto netlists + CSV, **not committed yet**); SAC baseline (Brent, student server, 1 seed): 0.662
+- ⬜ 3.R report section (material §3) · ⬜ optional: SAC on 2 more seeds
 
-**Milestone 4 — LLM agentic harness** (PDF §4, graded)
-- ✅ 4.0 google-genai installed · ⬜ 4.1 Antigravity CLI · ⬜ 4.2 one LLM agent per sub-task (prompt, MCP tools, skills)
-- ⬜ 4.3 MCP tools incl. the RL sizer · ⬜ 4.4 context/memory, reasoning per decision · ⬜ 4.5 best solutions, few sims
-- ⬜ 4.6 runtime comparison harness vs pure RL · ⬜ 4.R report section
+**Milestone 4: LLM agentic harness** (PDF §4), on `feat/m4-harness`
+- ✅ 4.1 template committed as given · ✅ 4.2 `sizing_tools.py` (7 TODOs, history CSV) + `test_sizing_tools.py` (23)
+- ✅ 4.3 `mcp_server.py`: `reason` argument + `test_mcp_server.py` (stdio)
+- ✅ 4.4 harness files: `AGENTS.md`, 4 subagents, 3 skills, MCP config, design log, session prompt + `test_harness_files.py`
+- ✅ 4.5 agy on the VM (DNS allowlist, login, permissions: see the log entry)
+- ✅ 4.6 one complete session (Gemini 3.8 Flash): 16 simulations, FoM 0.684; `harness_vs_rl.py` + `harness_vs_rl.png`
+- ⬜ 4.R report section (material §4) · ⬜ optional: a 2nd session (another model) / a session that uses RL
+- ⬜ optional (PDF appendix): cheap DC operating-point tool; PVT robustness
 
-**Submission:** ⬜ report ≤ 10 pages · ⬜ folder `Solutions/` (capital S): Pareto netlists after 5k sims + one CSV ·
-⬜ archive `[student number] [last name] G[group number].zip`. **Optional:** PVT over 12 corners; cheap analyses as MCP tools.
-
----
+**Submission:**
+- ⬜ report ≤ 10 pages
+- ⬜ `Solutions/` (decide: commit it; make its netlists portable, see the open decisions)
+- ⬜ archive `[student number] [last name] G[group number].zip` with the report, the project directory and `Solutions/`
+- ⬜ PRs `feat/td3` and `feat/m4-harness` → `main` (conflicts with Lukas's `07d2e87` in `agent.py`/`td3_runner.py`)
 
 ## Questions for the TAs
 **Open**
@@ -87,6 +94,16 @@ runner fixes and tests done, tuning in progress (stage B running). Deadline: Sun
 - Action mapping: theirs = `floor((a + 1)/2 · (n_steps − 1))` (now ours too).
 
 ## Open decisions / to-dos for Brent & Lukas
+- **`Solutions/` netlists are not portable:** their `wrdata` lines contain the absolute path of the machine that
+  simulated them (for our Pareto netlists a `/tmp/…/lane_a/…` scratch folder, which no longer exists). The circuit is
+  correct; only the output paths would fail elsewhere. Fix idea: `final_results.py` rewrites `…/CAD/no_backup/` to the
+  relative `no_backup/` when copying. Not done (a change to a deliverable: Brent decides). Then commit `Solutions/`?
+- **Harness prompt tweaks after the session** (proposed, not done, so the report describes the harness as it ran):
+  a "no shell commands" rule; a lower budget (~40 simulations, 3 designer rounds); `k = 3` in the designer prompt;
+  `model: flash` for the designer and the RL operator.
+- **Merging to `main`:** `feat/td3` and `feat/m4-harness` are unpushed; Lukas's `07d2e87` on `main` filled in the same
+  TODOs (`agent.py`: algorithmically identical; keep his one-line `select_action` step 1 + our comments;
+  `td3_runner.py`: keep our fixes).
 - **Path with a space** (e.g. OneDrive) silently loses all results: ngspice's `wrdata` cuts the file name at the space.
   Fix idea: relative paths in the netlist (`os.path.relpath`). Not done.
 - **`requirements.txt`** (shared): pytest is missing; nvidia/cuda packages pull in CUDA on a fresh install.
@@ -1365,3 +1382,95 @@ the examiners will ask about). Next, 4.5: install agy on the VM and do the first
   for a clean TD3 runtime.
 
 **Verification:** all tests pass (128).
+
+### 2026-11-05 17:15 — 3.6: TD3 timing rerun (`T_final_timing_s123456`): invalid timing, a reproducibility lesson
+**Goal:** a clean (solo) TD3 runtime for the harness comparison: the tuning runs ran two at a time.
+
+**What happened:**
+- Same code, same settings, seed 123456, in `~/td3_lanes/lane_a`.
+- Identical to `B_pilr_w_s123456` up to sim 625. At sim 626 this run hit the 20 s simulation timeout and the tuning
+  run didn't. Cause (Brent): the laptop was closed, the VM paused, the clock jumped.
+- From that one difference (−6 instead of −3.92) the trajectory diverges; this run's best is 0.683 (vs 0.702).
+- It took 20.8 min, but that includes the pause and an `agy` session sharing the CPU, so **the timing is invalid**. The
+  TD3 runtimes in the report are the tuning runs' (`B_pilr_w_*`, ~17 min, two runs in parallel on 2 cores: somewhat
+  pessimistic).
+
+**Lessons:**
+- A seeded run is exactly reproducible only while the same simulations hit the wall-clock timeout. The seeding itself
+  is proven by `test_runner.py` (fake simulator).
+- Don't close the laptop during runs.
+
+The run is kept in `CAD/runs/T_final_timing_s123456`.
+
+### 2026-11-05 17:00–17:50 — 4.5: Antigravity CLI (`agy` 1.5.1) on the VM: what was needed
+**Goal:** run the harness in agy on Brent's VM (agy has a `linux_arm64` build; the SAC server isn't needed for it).
+
+**Problems and fixes:**
+- **Model unreachable (`dial tcp 0.0.0.0:443`):** the VM has a DNS allowlist (dnsmasq, `/etc/dnsmasq.d/allowlist.conf`,
+  `address=/#/0.0.0.0`), which only listed `antigravity.google`.
+  - agy needs `daily-cloudcode-pa.googleapis.com` (the model), `aicode.googleapis.com`, `www.googleapis.com` and
+    `play.googleapis.com`.
+  - Brent added `server=/googleapis.com/192.168.64.1` and restarted dnsmasq (it only reads its config at start).
+  - Why it worked at first: the catch-all only blocks IPv4 (A) answers. IPv6 answers passed, and the VM had IPv6 via
+    the Mac's network until the laptop slept.
+- **`/mcp` empty:**
+  - after the network problems the stored login was rejected (`401 UNAUTHENTICATED`), and agy only loads MCP servers
+    once logged in → fixed with `/logout` and signing in again;
+  - `agy mcp list` saying "No MCP servers configured" is normal: it only lists `agy mcp add` registrations. Our
+    workspace file `CAD/.agents/mcp_config.json` is picked up when agy starts in `CAD/`; agy cached the 4 tools
+    including `reason` in `~/.gemini/antigravity-cli/mcp/cad/`.
+- **Permission prompts:** `CallMcpTool`, `RunCommand`, `EditFile`.
+  - The session stopped once because a permission request waited too long.
+  - Recommended: "always allow" (project scope) for the `cad` tools and for editing the design log; shell commands
+    stay on "ask".
+  - The two shell commands it asked for were harmless `ls` calls on its own config.
+  - Not: `--dangerously-skip-permissions` or `command(*)`.
+- **Quota:** each subagent is its own model conversation, and tool results fill the context, so a session costs a lot
+  of tokens (Gemini and Claude/GPT have separate weekly limits, `/usage`). No automatic model fallback was found;
+  switching with `/model` mid-session is fine, because the memory is the design log.
+
+### 2026-11-05 17:28–17:56 — 4.6: the harness session (Gemini 3.8 Flash): 16 simulations, FoM 0.684
+**Goal:** one complete session: analyst → designer rounds → (RL if stuck) → reviewer.
+
+**What happened** (`CAD/harness/design_log.md`, entries 1–7):
+- **The analyst** (0 sims): PM is the bottleneck with CL = 10 pF → an LHP zero via Rc; a hand design (Cc 1 pF, the
+  mirror balance S_p3/S_p1 = 2·S5/S4, L = 90 nm).
+- **Designer round 1** (10 sims):
+  - UGBW 40.6 MHz → Cc 0.3 pF, Rc 9.8 kΩ, a balanced current increase → all specs met at sim 10, FoM 0.565;
+  - it calibrated itself on the way: "gm scales with current, not W (moderate inversion)", "L = 45 nm kills gain
+    (DIBL)", "breaking the balance crushed gain to 39 V/V".
+- **The orchestrator:** "not stuck, RL is not needed" → round 2 for current.
+- **The interruption:** round 2 waited for a permission and was cancelled, and the login expired. After re-login the
+  session continued from the design log; a new MCP server meant a new experiment, so the best design was passed in
+  again (and re-simulated).
+- **Designer round 2** (6 sims): mn3 3 → 4 scales both currents by 0.75 → 211.5 µA, **FoM 0.684** (PM 60.6°,
+  UGBW 100.7 MHz).
+- **The reviewer:** margins (UGBW +0.7 %, PM +1.05 %: risks), 2 Pareto-optimal designs, the 3 key decisions, 16 sims,
+  0 RL.
+
+**Analysis:**
+- `analysis/harness_vs_rl.py` now joins the server runs of one session (the next run's clock and call numbers
+  continue after the previous run's last simulation, so the pause is excluded), plus a test.
+- Two panels: against runtime, and against the number of simulations (log).
+- Fixed colours per run, never cycled (the harness and one TD3 seed had shared the blue).
+
+| reached | LLM harness | TD3 s123456 | TD3 s1 | TD3 s2 |
+|---|---|---|---|---|
+| first design meeting all specs | 10.5 min / 10 sims | 5.5 min / 1072 | 5.3 min / 1225 | 8.5 min / 1956 |
+| FoM ≥ 0.684 | 13.4 min / 12 sims | 13.3 min / 3724 | never | never |
+
+The harness is ~300× more simulation-efficient and comparable in wall-clock time (its runtime is LLM reasoning; the
+first simulation comes after 6.3 min of analysis).
+
+**Frozen copy:** `CAD/harness/sessions/2026-11-05_gemini-3.8-flash/` (both history parts, the 6 feasible netlists,
+`final_design.cir`, a README), because `runs/` is git-ignored.
+
+### 2026-11-05 18:15 — tidy-up: report material, work log
+- New `docs/report/report_material.md`: per PDF section (M1–M4, "What to report"), with ready-to-use facts, tables,
+  numbers, the explainability examples and the honest caveats, plus a page budget.
+- Figures copied to `docs/report/figures/`: `final_max_fom.png`, `final_pareto.png`, `fom_evolution_A.png`,
+  `harness_vs_rl.png` (plus the existing `sr_methods.png`).
+- The Status at the top rewritten to the current state; new open decisions: the non-portable `wrdata` paths in the
+  `Solutions/` netlists, the proposed harness prompt tweaks (not done, so the report describes the harness as it
+  ran), the merge to `main`.
+- Note: `docs/worklog_detailed_2026-11-05.md` is an older private snapshot (milestones 1–2); this work log is complete.
