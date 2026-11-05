@@ -1291,3 +1291,54 @@ plus an MCP client test over stdio.
 - Note: `mcp` 2.3 uses snake_case fields (`input_schema`, `is_error`).
 
 **Verification:** all tests pass (120).
+
+### 2026-11-05 — 4.4: the harness files (agents, skills, rules, MCP config, memory)
+**Goal:** everything Antigravity CLI needs to run the harness, in `CAD/` so it travels with the folder. Formats from the
+agy docs (antigravity.google/docs: subagents, skills, rules, mcp).
+
+**What changed:**
+- `CAD/AGENTS.md` (6 KB; agy loads it in every session from the start folder):
+  - the goal;
+  - the circuit map (20 parameters → devices and roles);
+  - the allowed grid values;
+  - the spec table (hard vs optimise, how each is measured);
+  - the FoM in words;
+  - the 4 tools with their cost;
+  - the agents with the MCP tools each gets;
+  - the **workflow**: analyst → designer rounds (≤ 10 sims) → decision after each round (designer again /
+    `rl-operator` when stuck: no improvement in 2 rounds or still infeasible after 30 sims / `reviewer` when converged
+    or at ~300 sims);
+  - context management: subagents get only the relevant log entries + the 3 best designs, and return ≤ 300 words;
+  - rules: a `reason` on every call, numbers only from tools, one change per simulation, on-grid values.
+- `CAD/.agents/agents/`: `circuit-analyst`, `designer`, `rl-operator`, `reviewer`; the body is each agent's prompt
+  (input, procedure, output format). Frontmatter `tools: [view_file]` only: the docs warn that an unknown tool name
+  can hang a subagent. The MCP tools per agent are granted by the orchestrator (AGENTS.md table) and named in each
+  prompt; whether agy can also enforce this per agent is checked in 4.5.
+- `CAD/.agents/skills/`:
+  - `two-stage-opamp-design`: the first-order equations: currents from the mirror ratios, gm, A0 = A1·A2,
+    GBW = gm1/(2πCc), p2 = gm6/(2πCL), the zero and Rc (LHP zero, Rc ≈ (1 + CL/Cc)/gm6), PM ↔ p2 ≥ 2.2·GBW,
+    SR = I_tail/Cc on the rising edge, noise, balance;
+  - the knob table (spec → change → side effects) and the area formula from `area_estimation.py` (1 pF ≈ 333 µm²,
+    1 kΩ ≈ 71 µm², the pair and the mirror count twice);
+  - the "calibrate early" warning.
+  - `rl-sizer`: what TD3 is and costs (≈ 1.1 sims per step; milestone 3: first feasible after ~700–2000 sims), when it
+    is worth it, a batch procedure with stop criteria.
+  - `design-log`: the memory format (entry: goal, reasoning, actions, result, conclusion) and the rules (append only,
+    numbers from tools).
+- `CAD/.agents/mcp_config.json`: server `cad` = the venv Python + `mcp_server.py`; VM paths; ngspice on `PATH`;
+  timeout 1800 s.
+- `CAD/harness/`: `design_log.md` (empty memory), `session_prompt.md` (the task for a full run), `README.md` (how to
+  run, interactive and headless with `--output-format stream-json`), `sessions/` (transcripts).
+- `CAD/tests/test_harness_files.py` (5 tests):
+  - frontmatter of every agent/skill (name = file/folder name, description, body);
+  - `AGENTS.md` ≤ 24 000 bytes and names every agent, skill and tool;
+  - the MCP config points at `mcp_server.py`.
+
+**Decisions:**
+- No designs or results from milestone 3 in the prompts (a fair harness-vs-RL comparison). Only process knowledge:
+  the check of the formulas on the TD3 Pareto designs showed that the textbook mirror currents are ~2× too low and the
+  slew-rate estimate 2–3× too high in this 45 nm process; the skill says so ("calibrate early") without giving values.
+- The orchestrator (agy's main agent) writes the log, so the subagents need only `view_file`.
+
+**For Brent:** check the equations and the knob table in `two-stage-opamp-design` (your analog expertise; it's what
+the examiners will ask about). Next, 4.5: install agy on the VM and do the first contact (see `harness/README.md`).
