@@ -999,3 +999,84 @@ FoM evolution (best so far at 1000/2000/3000/5000 sims; mean reward of the last 
 
 **For Brent to check:** `CAD/output_figs/fom_evolution_A.png`. Which criterion matters most for the final choice:
 best FoM, number of feasible designs, or a stable mean at the end?
+- **Brent's answer (criterion):** the best FoM is the main goal. Stage B is ranked on the **mean of the best FoM over
+  the 3 seeds** (one run's best is a maximum, so a single lucky seed can't decide), with the spread over the seeds and
+  the simulation at which the best was reached as tie-breakers. This matches the PDF's comparison with the baseline
+  (max FoM within 5k sims).
+- **Added stage B2 (Brent's question: combine the best value of every hyperparameter):** stage B only had one
+  combination (actor lr 1e-4 + w 1000). The best stage-A value per hyperparameter, by best FoM: σ 0.1 and batch 128
+  (the start values were already best), w 250 (0.683, vs 0.682 for w 1000), actor lr 1e-4 (0.696), critic lr 3e-4
+  (0.659). Runs `B_allbest_s{123456,1,2}` with `--w 250 --pi_lr 1e-4 --q_lr 3e-4`, queued after stage B (~35 min more).
+  Caveat: hyperparameters interact (e.g. a slower critic and a slower actor together may learn too slowly in 5000
+  sims), so the combination of one-at-a-time winners isn't guaranteed to be the best; the seeds will show it.
+
+### 2026-11-05 12:30 — 3.5: tuning stage B + B2 (3 seeds per setting)
+**Goal:** check the stage-A winners over several seeds and pick the final hyperparameters on the **mean best FoM**.
+
+**What changed:** runs `CAD/runs/B_*` (+ `output_figs/B_*`, `solutions/B_*.csv`), same worktree method as stage A.
+No code changed.
+
+**Results** (σ 0.1 and batch 128 in every setting; seeds 123456, 1, 2):
+
+| setting | best FoM per seed (123456 / 1 / 2) | mean | std | worst | mean sim of best | mean n feasible | mean late reward |
+|---|---|---|---|---|---|---|---|
+| start values (w 500, actor 3e-4, critic 1e-3) | 0.615 / 0.617 / 0.684 | 0.639 | 0.039 | 0.615 | 2100 | 375 | −0.99 |
+| actor lr 1e-4 | 0.696 / 0.622 / 0.668 | 0.662 | 0.037 | 0.622 | 2323 | 393 | −0.58 |
+| w 1000 | 0.682 / 0.684 / 0.638 | 0.668 | 0.026 | 0.638 | 2291 | 459 | −0.38 |
+| **actor lr 1e-4 + w 1000** | 0.702 / 0.660 / 0.662 | **0.675** | **0.024** | **0.660** | 4097 | 494 | **−0.22** |
+| all-best (w 250, actor 1e-4, critic 3e-4) | 0.632 / 0.628 / 0.695 | 0.652 | 0.038 | 0.628 | 2596 | 956 | −0.50 |
+
+**Interpretation:**
+- Both single changes beat the start values on the mean best FoM (+0.02 / +0.03) and their combination is best
+  (+0.036), with the smallest spread and the best worst case. It also degrades least at the end (late reward −0.22).
+- The "best value of every hyperparameter" combination is **worse** than actor lr 1e-4 + w 1000 (0.652): the
+  hyperparameters interact. Most likely the slower critic (3e-4) together with the slower actor learns too little in
+  5000 sims, and w 250 gives a less varied buffer. One-at-a-time winners don't simply add up.
+- The differences are small compared with the seed spread: with 3 seeds the standard error of a mean is ≈ 0.02, so
+  only the ~0.04 gap to the start values is a clear trend; 0.675 vs 0.668 is not.
+- Cost of the winner: it finds its best design late (mean sim 4097, one seed at 4615), so it uses almost the whole
+  5000-sim budget. w 1000 alone finds its best at ~2300.
+
+**Recommendation (for Brent to decide):** actor lr 1e-4 + w 1000, the rest at the start values
+(σ 0.1, batch 128, critic lr 1e-3). Alternative if an earlier best matters: w 1000 alone.
+
+**For Brent to check:** choose the final values; then 3.6 (final run, plots, `Solutions/`).
+
+### 2026-11-05 — 3.6 prep: TAs' SAC baseline + milestone 4 template placed for the student server
+**Goal:** Brent got the lab session 3–4 files; put everything where it belongs so the `CAD/` folder can be copied to
+the student server as is.
+
+**What changed (branch `feat/td3`):**
+- Moved: `sac_runner.cpython-39-x86_64-linux-gnu.so` → `CAD/`, `sac_baseline.cpython-39-x86_64-linux-gnu.so` →
+  `CAD/td3/` (slide 2); `mcp_server.py`, `sizing_tools.py` → `CAD/` (milestone 4 template, imports `circuit_env`/`td3`);
+  `session3-4.pptx` → `docs/course/` (private). The `.so` files and the template are **not committed** (binaries /
+  course material; to agree with Lukas).
+- `CAD/baseline_runner.py`: `import sac_runner as sr; sr.main()` (slide 2).
+- `CAD/td3/__init__.py`: `from .sac_baseline import SAC` (slide 2), inside `try/except ImportError` → `SAC = None`.
+  The `.so` files only load on **x86-64 Linux with Python 3.9**; on our ARM VM (Python 3.14) an unguarded import
+  would break `import td3` and every test.
+
+**How it works:**
+- SAC = Soft Actor-Critic, the TAs' reference agent, compiled with Nuitka (no source). Its runner uses our
+  `CircuitEnv` (same FoM, logging) and has the same options as `td3_runner.py` plus `--alpha_lr`,
+  `--init_temperature`, `--target_update_interval`.
+- Milestone 4: `mcp_server.py` (complete) exposes 4 tools to an LLM coding agent over MCP: `simulate`, `warmup`,
+  `train`, `get_status`. `sizing_tools.py` (`SizingExperiment`, 7 TODOs) is ours to fill in with the milestone 2–3 code.
+- **Brent:** the template's hyperparameters (σ 0.1, actor lr 3e-4, critic lr 3e-4, batch 100) **stay as given**;
+  only `td3_runner.py`'s are ours to choose.
+- Its `_validate_parameters` docstring says the grids are `np.arange(min, max, step)` "as phase one" → confirms our
+  answer to TA question 1 (the max is excluded, hence `n_steps − 1` in the mapping).
+
+**Verification:**
+- Our code has no Python ≥ 3.10 features (`ast.parse(..., feature_version=(3, 9))` + union-annotation check), so it
+  should run under the server's Python 3.9.
+- Fresh copy of `CAD/` without `runs/ no_backup/ output_figs/ solutions/` (1.9 MB): 96 tests pass, a real 40-sim
+  `td3_runner.py` run works, all output folders are created automatically.
+- On the VM: `import td3` works (`SAC = None`); `python baseline_runner.py` fails with "No module named sac_runner"
+  (expected: wrong platform).
+
+**For Brent:** copy with
+`rsync -av --exclude runs/ --exclude no_backup/ --exclude output_figs/ --exclude solutions/ --exclude __pycache__/ CAD/ <user>@<server>:<dir>/CAD/`,
+then on the server `cd CAD && python baseline_runner.py` (needs Python 3.9 + the course packages + ngspice there).
+Unknown until it runs: the SAC runner's defaults, and whether it stops at 5000 sims (our `--max_sims` is in
+`td3_runner.py`, not in the env).
