@@ -29,7 +29,7 @@ PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3).
 **Milestone 3 — TD3 agent** (PDF §3) — guide with explanations, open decisions and step plan: `docs/milestone3_guide.md`
 - ✅ 3.1 `select_action` (exploration noise) · ✅ 3.2 `update_parameters` (twin critics, target smoothing, delayed actor,
   soft updates) + `tests/test_agent.py` — branch `feat/td3`
-- ⬜ 3.3 runner fixes (stop at 5000 sims, seeding, `finalize()`, yaml/hyperparameter copy, start values)
+- ✅ 3.3 runner fixes (stop at 5000 sims, seeding, `finalize()`, yaml/hyperparameter copy, start values) + `tests/test_runner.py`
 - ⬜ 3.3 tune the 5 required hyperparameters: noise sigma, batch size, warm-up steps, actor lr, critic lr
 - ⬜ 3.4 5000-sim run; plots: max FoM vs simulation, current–area Pareto front
 - ⬜ 3.5 compare with the TAs' baseline agent within 5k sims · ⬜ 3.R report section
@@ -827,4 +827,74 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
 - **Merge:** this file is now Lukas's latest plus fixes, so the conflict with main is small. Route: a branch from main →
   `git revert efe150e` (brings milestone 2 back) → merge `feat/td3` → resolve `circuit_env.py` to this version. A
   plain merge would silently drop `docs/report/` (dry run).
+
+### 2026-11-05 — milestone 2 pushed to `feat/env` (milestone 3 stays local)
+- **Goal (Brent):** push the env work, but none of the milestone 3 implementation.
+- **What changed:**
+  - In a temporary git worktree (so this working tree wasn't touched), the 6 milestone 2 commits of `feat/td3` were
+    cherry-picked onto `feat/env` (`73ac392`): `ddd1b67`, `1983994`, `f8b0399`, `ed201de`, `0027a7b`, `d340c83` →
+    `517f2e8` … `c36701a`.
+  - The only conflict was in `docs/worklog.md`, resolved to each commit's own version.
+  - Pushed: `origin/feat/env` `cc96732..c36701a`. No force, no push to main, no PR.
+- **Not pushed:**
+  - `00a4ac3` (the runner's `memory_batch` fix) and `357c400` (`select_action`, `update_parameters`,
+    `test_agent.py`);
+  - Brent's uncommitted comments in `td3/agent.py`.
+
+  The pushed work log does describe the milestone 3 work (Brent: push it as is).
+- **Verification:** on the pushed state, `circuit_env.py`, `test_env.py`, `test_reference_rewards.py` and the work log are
+  identical to `feat/td3`; `agent.py`/`td3_runner.py` are the course versions. pytest there: 81 passed (= 92 minus
+  the 11 agent tests).
+- **Branches now:**
+  - `feat/env` = milestone 2 (pushed);
+  - `feat/td3` = milestone 2 + milestone 3 (local, its M2 commits have other hashes than on `feat/env`).
+
+  Later, rebase `feat/td3` onto `feat/env` (both mine, `feat/td3` unpushed) so that it only adds the M3 commits.
+
+### 2026-11-05 — PR #8: milestone 2 back on main (waiting for Brent's merge)
+- **Goal (Brent):** milestone 2 on main.
+- **What changed:** branch `merge/m2-env` from main (`3c7904b`), built in a temporary worktree:
+  1. `a659fe0` reverts `83382ed` (the revert of the PR #6 merge; `efe150e` is PR #7's merge commit). The only
+     conflict was `circuit_env.py` (Lukas's edits after the revert), resolved to its PR #6 state (`cc96732`).
+  2. `91c9380` merges `feat/env` (no conflicts).
+
+  The result is identical to `feat/env` (`c36701a`): no milestone 3 code, `docs/report/` back. pytest: 81 passed.
+  Pushed, **PR #8** opened.
+- **Not done:** `gh pr merge 8` was blocked by the permission system ("Merge Without Review"), as for PR #3/#6. No
+  workaround via a direct push. Brent merges PR #8 himself.
+
+### 2026-11-05 — 3.3: `feat/td3` rebased onto main; runner fixes + `tests/test_runner.py`
+- **Rebase (Brent: continue milestone 3):**
+  - PR #8 is merged (main `696ff53` = milestone 2).
+  - `feat/td3` rebuilt on main with only its 2 milestone 3 commits: `00a4ac3` → `73c23c5`, `357c400` → `f6b2773`.
+    The work-log conflict was resolved to main's version, which already contained that entry.
+  - Files identical to before; Brent's uncommitted agent.py comments + the work log stashed and restored.
+  - Backup: local branch `backup/feat-td3-before-rebase`.
+- **What changed in `td3_runner.py`** (every change marked `# CHANGED`, so it can be reverted):
+  - R1: defaults for the 5 hyperparameters: σ 0.1, batch 128, w 500, actor lr 3e-4, critic lr 1e-3 (the guide's start
+    values; tuning in 3.5).
+  - R4 (D1): new `--max_sims 5000`. The warm-up and the training loops (outer and inner) stop at
+    `env.counter >= max_sims`, so a run ends at exactly 5000 simulations, possibly mid-episode. `--T` stays: whichever
+    comes first. Course behaviour back: `--max_sims 1000000`.
+  - R5: `env.np_random = np.random.default_rng(seed)` (random start designs) and `env.action_space.seed(seed)`
+    (random warm-up actions). `np.random.seed` doesn't reach either. No extra simulation (unlike
+    `env.reset(seed=)`).
+  - R6/R7: `runs/<run_id>/` gets `TwoStage.yaml`, `hyperparameters.json`, and at the end the networks
+    (`agent.save` → `td3_actor`, …); `env.finalize()` draws the Pareto plot.
+  - A progress line every 100 steps (steps, simulations, best reward) and a final summary line.
+  - R2 was Brent's own fix; R3 (the misleading batch names) left as it is (Brent).
+- **`tests/test_runner.py` (4 tests, the real `main()` with the fake simulator):**
+  - the defaults are numbers;
+  - the stop at exactly 57 simulations in the middle of an episode;
+  - the run folder content;
+  - the same seed → identical designs, another seed → different ones.
+
+  **Mutation check:** removing the mid-episode stop, the training-loop budget, either seeding line or the checkpoint
+  each makes ≥ 1 test fail.
+- **A real smoke run** (`--max_sims 220 --w 100`, 36 s):
+  - 220 rows, 0 failed, 0 timeouts, 0 feasible;
+  - mean step reward −3.06 in the warm-up vs −2.18 in training; best −0.241;
+  - ~0.16 s per simulation → a 5000-simulation run ≈ 15 min.
+- **pytest:** 96 passed.
+- **Next:** 3.4, one full 5000-simulation run with the start values; then look at the plots together.
 
