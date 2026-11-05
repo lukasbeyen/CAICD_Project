@@ -35,20 +35,22 @@ def readParser():
     parser.add_argument('--batch_size', type=int, default=128, metavar='N',
                         help='mini-batch size per update (default: 128)')
     
-    parser.add_argument('--w', type=int, default=500, metavar='N',
-                        help='number of warmup steps with random actions (default: 500, ~11 %% of the budget)')
+    # tuned (work log 3.5, 3 seeds per setting): w 1000 + pi_lr 1e-4 had the best mean best-FoM within 5000 sims
+    parser.add_argument('--w', type=int, default=1000, metavar='N',
+                        help='number of warmup steps with random actions (default: 1000, ~22 %% of the 5000 sims)')
     
     parser.add_argument('--T', type=int, default=10_000, metavar='N',
                         help='total training steps (default: 10_000)')
 
-    # CHANGED (not in the course runner): the assignment's budget is 5000 SIMULATIONS. One episode is 1 reset
+    # CHANGED (not in the course runner): the assignment compares with the baseline within 5k SIMULATIONS and asks for
+    # the Pareto solutions after 5k simulations (no hard cap is stated). One episode is 1 reset
     # simulation + 10 step simulations, so --T 10_000 steps would be 11_000 simulations. Training stops at whichever
     # comes first, --T steps or --max_sims simulations. To go back to the course behaviour: --max_sims 1_000_000.
     parser.add_argument('--max_sims', type=int, default=5000, metavar='N',
                         help='simulation budget: stop after this many ngspice simulations (default: 5000)')
     
-    parser.add_argument('--pi_lr', type=float, default=3e-4, metavar='G',
-                        help='actor learning rate (default: 3e-4)')
+    parser.add_argument('--pi_lr', type=float, default=1e-4, metavar='G',
+                        help='actor learning rate (default: 1e-4, tuned)')
     
     parser.add_argument('--q_lr', type=float, default=1e-3, metavar='G',
                         help='critic learning rate (default: 1e-3)')
