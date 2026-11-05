@@ -1080,3 +1080,53 @@ the student server as is.
 then on the server `cd CAD && python baseline_runner.py` (needs Python 3.9 + the course packages + ngspice there).
 Unknown until it runs: the SAC runner's defaults, and whether it stops at 5000 sims (our `--max_sims` is in
 `td3_runner.py`, not in the env).
+
+### 2026-11-05 14:00 — 3.5: Lukas's milestone 3 (`07d2e87` on main) compared; his hyperparameters on our code, 4 seeds
+**Goal:** Brent: compare Lukas's TD3 with ours, and run his hyperparameters with our implementation on 4 seeds.
+
+**Lukas's commit** (`07d2e87` "agent implementation v1", pushed directly to `main`): fills in `select_action` and
+`update_parameters` in `td3/agent.py`; `td3_runner.py`: defaults σ 0.1, batch 64, w 200, actor lr 1e-3, critic lr
+1e-3 (as strings, argparse converts them) and the `memory_batch=` fix.
+
+**Agent comparison:**
+- His agent passes all 11 tests of our `tests/test_agent.py` (run in a worktree at `07d2e87`).
+- Same seed + same batches: identical actions and **bit-identical weights after 200 updates** (max difference 0.0).
+  Algorithmically the two are the same.
+- His `select_action` step 1 is simpler: one line `torch.as_tensor(state, dtype=torch.float32, device=device)
+  .reshape(1, -1)` (handles numpy, lists and tensors) vs our 3 lines. His structure follows the docstring 1:1 (steps 3
+  and 4 as two `no_grad` blocks). Our comments explain the why (paper sections) and we have the tests.
+- Suggestion (not done; Brent's uncommitted comments are in `agent.py`): take his one-line step 1.
+
+**Runner comparison:** his is the course runner with the values filled in. Missing vs ours: the 5000-sim stop (his runs
+`--T 10000` steps = 11000 sims), seeding of `env.np_random` / `env.action_space` (so not reproducible), the run folder
+(YAML, `hyperparameters.json`, networks) and `env.finalize()`.
+
+**Runs:** our code (`feat/td3` `8000072`, same agent/runner/env as the tuning), his hyperparameters, seeds 123456, 1,
+2, 3, 5000 sims each (`CAD/runs/L_lukas_s*`). The VM had restarted (13:17) and `/tmp` was wiped: worktrees recreated.
+
+| seed | best FoM | @sim | first feasible | n feasible | mean late reward |
+|---|---|---|---|---|---|
+| 123456 | 0.669 | 4865 | 811 | 2194 | +0.11 |
+| 1 | 0.606 | 4964 | 302 | 789 | −0.59 |
+| 2 | 0.687 | 4950 | 356 | 1799 | −0.17 |
+| 3 | 0.665 | 1220 | 579 | 374 | −0.24 |
+
+| setting | seeds | mean best | std | worst | best | mean n feasible |
+|---|---|---|---|---|---|---|
+| start values | 3 | 0.639 | 0.039 | 0.615 | 0.684 | 375 |
+| **ours: actor lr 1e-4 + w 1000** | 3 | **0.675** | **0.024** | **0.660** | **0.702** | 494 |
+| Lukas's values | 4 | 0.657 | 0.035 | 0.606 | 0.687 | **1289** |
+
+Same seeds side by side (best FoM, ours / Lukas): 123456: 0.702 / 0.669, 1: 0.660 / 0.606, 2: 0.662 / 0.687.
+
+**Interpretation:**
+- On the best FoM within 5000 sims ours is ahead (+0.018 on the mean, wins on 2 of 3 shared seeds, better worst
+  case), but the gap is within the seed spread (standard error ≈ 0.015–0.02): a trend, not a proof.
+- His values are better at finding *many* feasible designs early (first at sim 300–800, ~1300 per run vs ~500): useful
+  for the Pareto front. Fast actor (1e-3) + short warm-up (200) = learns quickly, then exploits.
+- 3 of his 4 runs found their best in the last 150 sims (still improving at the budget). That fits Lukas's 0.711 on one
+  seed being found **after sim 5000** (his runner goes to 11000 sims) or a lucky seed; none of our 4 runs reaches 0.711
+  within 5000 sims.
+
+**For Brent / Lukas:** ask Lukas at which simulation his 0.711 was found (`designs.csv`, `sim ≤ 5000`). Choose the final
+values: best mean FoM → ours; many feasible designs / Pareto → his.
