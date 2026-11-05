@@ -29,9 +29,9 @@ class FakeEngine:
         self.timed_out = False
         self.calls = []
 
-    def create_new_netlist(self, params, process='TT', temp_pvt=None, vdd=None):
-        self.calls.append(dict(params=params, process=process, temp_pvt=temp_pvt, vdd=vdd))
-        self.params = params
+    def create_new_netlist(self, parameters, process='TT', temp_pvt=None, vdd=None):  # same names as the real wrapper
+        self.calls.append(dict(params=parameters, process=process, temp_pvt=temp_pvt, vdd=vdd))
+        self.params = parameters
         path = os.path.join(self.folder, f'TwoStage_fake_{len(self.calls)}.cir')
         with open(path, 'w') as f:
             f.write('* fake netlist\n')
@@ -183,11 +183,11 @@ def test_negative_pm_and_zero_ugbw_give_minus_one():
 
 
 def test_unclassified_hard_constraint_is_refused(monkeypatch):
-    # a hard constraint in TwoStage.yaml that is in neither spec list would be treated inconsistently
-    # (reward: as a lower bound, normalize_specs: not clipped), so the env refuses to start
+    # a hard constraint that is in neither spec list can't be scored: reward_computation raises
     monkeypatch.setattr(CircuitEnv, 'LOWER_BOUND_SPECS', ['gain', 'phm', 'slewRate'])  # ugbw 'forgotten'
+    env = CircuitEnv(run_id='test')
     with pytest.raises(ValueError, match="'ugbw'"):
-        CircuitEnv(run_id='test')
+        env.reward_computation(env.normalize_specs(TARGETS))
 
 
 def test_reference_designs_normalization_and_reward():
@@ -221,32 +221,23 @@ def test_failed_measurement_gives_the_penalty_and_worst_state(make_env):
     worst = {'area': 1.0, 'current': 1.0, 'gain': -1.0, 'noise': 1.0, 'phm': -1.0, 'slewRate': -1.0, 'ugbw': -1.0}
     assert list(obs) == [worst[name] for name in OBS_ORDER]
     obs, reward, done, info = env.step(np.zeros(env.n_actions))
-    assert reward == -6.0 and info['failed'] and not info['hard_satisfied']
+    assert reward == -6.0 and env.real_specs is None and not info['hard_satisfied']
 
 
 def test_ngspice_error_is_a_failed_sim(make_env):
     env = make_env(metrics=TARGETS, exit_code=1)
     env.reset(seed=0)
-    _, reward, _, info = env.step(np.zeros(env.n_actions))
-    assert reward == -6.0 and info['failed'] and not info['timeout']
+    _, reward, _, _ = env.step(np.zeros(env.n_actions))
+    assert reward == -6.0 and env.real_specs is None and not env.simulation_engine.timed_out
 
 
 def test_timeout_is_a_failed_sim_and_logged(make_env):
     env = make_env(metrics=TARGETS, timeout=True)
     env.reset(seed=0)
-    _, reward, _, info = env.step(np.zeros(env.n_actions))
-    assert reward == -6.0 and info['failed'] and info['timeout']
+    _, reward, _, _ = env.step(np.zeros(env.n_actions))
+    assert reward == -6.0
     rows = designs_csv(env)
     assert rows['timeout'].all() and rows['failed'].all()
-
-
-@pytest.mark.parametrize('name', ['noise', 'current', 'area'])
-def test_impossible_metric_is_a_failed_sim(make_env, name):
-    # noise, current (which includes Ibias) and area are > 0 for any real circuit: <= 0 means broken data
-    env = make_env(metrics=dict(TARGETS, **{name: 0.0}))
-    env.reset(seed=0)
-    _, reward, _, info = env.step(np.zeros(env.n_actions))
-    assert info['failed'] and reward == -6.0
 
 
 def test_failed_penalty_is_below_every_valid_reward():

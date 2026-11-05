@@ -776,3 +776,55 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
   `floor((a+1)/2·(len−1))`. The references never hit ±1, so the end behaviour is extrapolated. That's TA question 1.
 - **Verification:** pytest 95 passed; the 3-episode real ngspice smoke run above.
 
+### 2026-11-05 — 2.9: `circuit_env.py` = Lukas's latest version (`3c7904b`) + only the necessary fixes
+- **Goal (Brent):** option A for reset (the template: a random design is simulated but not rewarded; we count and log
+  it). Use Lukas's file as the template and add only what's necessary from our design; leave the rest (our comments
+  and extras) out.
+- **Lukas's `3c7904b` (pushed to main)** fixed:
+  - the float64 actions (`np.clip` instead of `action_space.contains`);
+  - the netlist path in `simulate`;
+  - 0.3 + r_T when all specs pass.
+
+  He also changed the normalization to `(v − g)/(|v| + |g|)`: identical to our clip (any v ≤ 0 gives exactly −1).
+- **What changed (branch `feat/td3`):** `circuit_env.py` is his file (323 lines) + 48 lines. Each change fixes a crash
+  or meets a project requirement:
+  1. `action_refine` l.78: the TAs' mapping instead of his linear one (5/100 → 100/100 reference pairs;
+     comparability with the baseline).
+  2. `simulate` l.96: `self.netlist` kept (needed for the feasible copy and the log); `self.counter += 1` (the
+     5000-sim budget).
+  3. `normalize_specs` l.116:
+     - `None` → the worst-case state instead of `raise` (a failed sim mustn't end a 5000-sim run);
+     - his `observation_space.contains` check removed: it rejects every float64 measurement, so `reset()` crashed;
+     - his comment on `abs()` corrected.
+  4. `log_design` l.154 + `finalize` l.181 added (`designs.csv` per CLAUDE.md, Pareto plot).
+  5. `reset` l.190: `self.episode += 1`, `log_design()` without a reward.
+  6. `step` l.228:
+     - failed sim → −6 penalty;
+     - the plot folder `output_figs/<run_id>` and `run_id` passed to the course plot functions (his file paths
+       crashed);
+     - feasible netlist copy + `save_solutions_csv`;
+     - `log_design`.
+  7. `UPPER_BOUND_SPECS`/`LOWER_BOUND_SPECS` moved from `reward_computation` to the class (normalize_specs needs
+     LOWER too).
+  8. `__init__`: `failed_penalty`, `episode`, `run_folder`, the ngspice logs to `runs/<run_id>/logs`.
+- **Left out on purpose (ours, not necessary):**
+  - the ≤ 0 noise/current/area check (never triggered in 350 random designs; its test removed);
+  - the hard-constraint check in `__init__` (his `raise` inside `reward_computation` does the same);
+  - `info` back to his `{'hard_satisfied'}`;
+  - our comments and docstring edits.
+
+  Kept as he wrote them: his `print("Simulation failed")`, the duplicated target loop, the `TODO:` docstrings.
+- **Tests:**
+  - FakeEngine uses the wrapper's argument name `parameters` (he calls `create_new_netlist(parameters=...)`);
+  - the failed-sim tests check `env.real_specs is None` / `timed_out` / `designs.csv` instead of `info`;
+  - the hard-constraint test calls `reward_computation`;
+  - `test_impossible_metric_is_a_failed_sim` removed.
+- **Verification:**
+  - vs the previous commit: `normalize_specs` and `reward_computation` the same on 20 000 random spec sets (max
+    difference 8.9e-16), `action_refine` identical on 5000 actions;
+  - a real ngspice run: 3 episodes → 33 rows, counter 33, 30 rewarded rows;
+  - pytest: 92 passed.
+- **Merge:** this file is now Lukas's latest plus fixes, so the conflict with main is small. Route: a branch from main →
+  `git revert efe150e` (brings milestone 2 back) → merge `feat/td3` → resolve `circuit_env.py` to this version. A
+  plain merge would silently drop `docs/report/` (dry run).
+
