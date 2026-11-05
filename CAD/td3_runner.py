@@ -12,7 +12,7 @@ def readParser():
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed (default: 123456)')
 
-    parser.add_argument('--noise_sigma', type=float, default="???",
+    parser.add_argument('--noise_sigma', type=float, default="0.1",
                         help='fixed noise sigma added to the deterministic action')
 
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
@@ -30,19 +30,19 @@ def readParser():
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     
-    parser.add_argument('--batch_size', type=int, default="???", metavar='N',
+    parser.add_argument('--batch_size', type=int, default="64", metavar='N',
                         help='hidden size')
     
-    parser.add_argument('--w', type=int, default="???", metavar='N',
+    parser.add_argument('--w', type=int, default="200", metavar='N',
                         help='number of warmup steps')
     
     parser.add_argument('--T', type=int, default=10_000, metavar='N',
                         help='total training steps (default: 10_000)')
     
-    parser.add_argument('--pi_lr', type=float, default="???", metavar='G',
+    parser.add_argument('--pi_lr', type=float, default="0.001", metavar='G',
                         help='learning rate')
     
-    parser.add_argument('--q_lr', type=float, default="???", metavar='G',
+    parser.add_argument('--q_lr', type=float, default="0.001", metavar='G',
                         help='learning rate')
 
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
@@ -92,7 +92,7 @@ def warmup_exploration(args, env, env_pool, agent):
 def train_policy(args, env_pool, agent, total_steps):
     state, action, reward, next_state, done = env_pool.sample(args.batch_size)
     batch = (state, action, reward, next_state, done)
-    agent.update_parameters(memory=batch, update=total_steps)
+    agent.update_parameters(memory_batch=batch, update=total_steps)
 
 
 def main(args=None):
