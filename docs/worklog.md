@@ -1342,3 +1342,26 @@ agy docs (antigravity.google/docs: subagents, skills, rules, mcp).
 
 **For Brent:** check the equations and the knob table in `two-stage-opamp-design` (your analog expertise; it's what
 the examiners will ask about). Next, 4.5: install agy on the VM and do the first contact (see `harness/README.md`).
+
+### 2026-11-05 — 4.6 (prepared): `analysis/harness_vs_rl.py`, the runtime comparison for the report
+**Goal:** PDF "Finalize and Report": runtime vs. max FoM, harness vs. pure RL, plus explainability examples.
+
+**What changed:**
+- New `CAD/analysis/harness_vs_rl.py --harness <runs> --rl <runs>`:
+  - harness: `harness_history.csv`, where `elapsed_s` counts from the MCP server start, so it includes the LLM's
+    thinking time;
+  - TD3: `designs.csv`, with the time from the netlist names (`TwoStage_<unix time>_…`, 1 s resolution: no rerun
+    needed);
+  - outputs: `output_figs/harness_vs_rl.png` (max FoM against runtime); a table of runtime and simulations to the
+    first design meeting all specs and to FoM 0.5, 0.6 and the harness's best (exact value, rounded label); the
+    trace of the simulations that raised the harness's best FoM, with their `reason`.
+- New `CAD/tests/test_harness_vs_rl.py` (3 tests, made-up runs): failed and reset rows are skipped, the clocks, the
+  milestones, the improvement trace.
+- Integration check: a 3-simulation session through the backend (TA references 1–3) + `B_pilr_w_s123456` → the
+  table and the trace come out right. A bug found and fixed: a rounded best-FoM level (−0.253 > −0.2533) was "never
+  reached". The check's run folders were removed again.
+- Fairness of the timing: the tuning runs ran two at a time on 2 cores. `T_final_timing_s123456` reruns the final
+  configuration alone (same seed, in `~/td3_lanes/lane_a` so its `clean.sh` can't touch a harness session in `CAD/`)
+  for a clean TD3 runtime.
+
+**Verification:** all tests pass (128).
