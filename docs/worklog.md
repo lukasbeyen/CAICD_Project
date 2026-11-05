@@ -1164,3 +1164,31 @@ budget stop. It takes the usual command-line options (`sr.main()` parses `sys.ar
 **Consequence for the comparison (3.6):** the baseline runs ~11 000 sims by default → compare on its **first 5000
 simulations** (`designs.csv`, `sim ≤ 5000`; same env, so same logging and FoM), and run it on several seeds
 (`python baseline_runner.py --seed 1 --run_id sac_s1`, …) because one seed is one sample.
+
+### 2026-11-05 14:47 — 3.5: stage C, our TD3 with the SAC baseline's hyperparameters (+2 variations)
+**Goal:** Brent: on the student server the SAC baseline currently does better than our TD3. Run our TD3 with SAC's
+hyperparameters and try to beat its FoM.
+
+**Runs** (`CAD/runs/C_*`, our code `8000072`, 5000 sims, seeds 123456, 1, 2):
+- `C_sac_*`: SAC's values exactly: σ 0.1, batch 100, w 100, actor lr 3e-4, critic lr 3e-4.
+- `C_sac_pilr_*`: the same with actor lr 1e-4 (slower actor = our clearest tuning effect).
+- `C_sac_qlr_*`: the same with critic lr 1e-3 (our start value).
+- TD3's delayed actor update stays at 2 (part of TD3; SAC's `--actor_update_interval 1` is "unused").
+
+**For Brent:** the SAC FoM to beat must be its best over **sim ≤ 5000** of its `designs.csv` (its runner goes to ~11 000 sims).
+- **Restart (14:58):** Brent gave the VM 3 cores / 5.4 GB (was 2 / 3.4 GB); the first attempt (2 lanes in `/tmp`) was
+  stopped by the VM shutdown. Restarted with 3 lanes as git worktrees in `~/td3_lanes/lane_{a,b,c}` (at `c171eeb`, same
+  agent/runner/env code), outside `/tmp` so a restart doesn't wipe them. Log: `~/td3_lanes/tune_stage_c.log`.
+- **Result (aborted at 15:45 on Brent's call, 5 of 9 runs finished; the 4 unfinished ones are not kept):**
+
+  | setting (batch 100, w 100, σ 0.1) | seed 123456 | seed 1 | seed 2 (aborted, best so far) |
+  |---|---|---|---|
+  | SAC's values (actor 3e-4, critic 3e-4) | 0.300 | 0.368 | (0.311 @ sim 3677) |
+  | + actor lr 1e-4 | 0.366 | (0.075 @ sim 4613) | (0.661 @ sim 3872) |
+  | + critic lr 1e-3 | 0.584 | 0.335 | — |
+
+  Our TD3 with SAC's hyperparameters is far worse than with our tuned values (0.675 mean): 0.30–0.37. Likely the
+  short warm-up (100 steps ≈ 110 sims): TD3's critic starts from very few, one-sided samples, and TD3 has only the small
+  fixed exploration noise, while SAC keeps exploring through its entropy term. So SAC's lead is not explained by its
+  hyperparameters. **Decision (Brent):** stop stage C; our previous tuned values stay the candidate. The comparison with
+  SAC waits for its best FoM over `sim ≤ 5000`.
