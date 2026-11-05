@@ -6,8 +6,8 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 `circuit_env.py` `reward_computation`.)
 
 ## Status
-**Where we are:** milestone 1 on `main` (`efe150e` = state of PR #5). Milestone 2 on branch `feat/env` only (merged as
-PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3). Deadline: Sun 8 Nov 2026, 23:59.
+**Where we are:** milestones 1 and 2 on `main` (PR #8). Milestone 3 on branch `feat/td3` (not pushed): agent,
+runner fixes and tests done, tuning in progress (stage B running). Deadline: Sun 8 Nov 2026, 23:59.
 
 **Milestone 1 — simulator interface** (PDF §1)
 - ✅ 1.0 ngspice wrapper: ngspice from PATH, real exit code, log files, output folder, 20 s timeout
@@ -30,12 +30,10 @@ PR #6 and reverted again via PR #7 at Brent's request). Next: milestone 3 (TD3).
 - ✅ 3.1 `select_action` (exploration noise) · ✅ 3.2 `update_parameters` (twin critics, target smoothing, delayed actor,
   soft updates) + `tests/test_agent.py` — branch `feat/td3`
 - ✅ 3.3 runner fixes (stop at 5000 sims, seeding, `finalize()`, yaml/hyperparameter copy, start values) + `tests/test_runner.py`
-- ⬜ 3.3 tune the 5 required hyperparameters: noise sigma, batch size, warm-up steps, actor lr, critic lr
-- ⬜ 3.4 5000-sim run; plots: max FoM vs simulation, current–area Pareto front
-- ⬜ 3.5 compare with the TAs' baseline agent within 5k sims · ⬜ 3.R report section
-- Runner fixes needed (`td3_runner.py`): stop on `env.counter >= 5000` (simulations, not steps); `env.reset(seed=args.seed)`
-  once and `env.action_space.seed(args.seed)` (warm-up uses `action_space.sample()`, not seeded by `np.random.seed`);
-  call `env.finalize()` at the end; `agent.update_parameters(memory=batch, ...)` doesn't match the signature
+- ✅ 3.4 5000-sim run with the start values (`runs/start_values_s123456`); plots: max FoM vs simulation, current–area Pareto front
+- 🔄 3.5 tune the 5 required hyperparameters (noise sigma, batch size, warm-up steps, actor lr, critic lr):
+  ✅ stage A (one at a time, 9 runs) · 🔄 stage B (3 seeds, 4 settings) · ⬜ Brent picks the final values
+- ⬜ 3.6 final run + plots + `Solutions/` · ⬜ compare with the TAs' baseline agent within 5k sims · ⬜ 3.R report section
   `update_parameters(self, memory_batch, update)`; the `"???"` defaults of the 5 hyperparameters.
 
 **Milestone 4 — LLM agentic harness** (PDF §4, graded)
@@ -898,3 +896,106 @@ New entries go below (Goal / What changed / How it works / Decisions / Verificat
 - **pytest:** 96 passed.
 - **Next:** 3.4, one full 5000-simulation run with the start values; then look at the plots together.
 
+### 2026-11-05 — 3.4: first full run with the start values (`runs/start_values_s123456`)
+- **Settings:** the runner defaults: σ 0.1, batch 128, w 500, actor lr 3e-4, critic lr 1e-3, γ 0.99, τ 0.005, seed
+  123456. 5000 simulations (4545 steps), 17 min.
+- **Results** (`designs.csv`):
+  - failed: 11 sims, all timeouts;
+  - **42 feasible designs**, the first at sim 663 (~110 sims after the warm-up ended at sim 550);
+  - **best FoM 0.615** at sim 1677: area 0.88e-9 m² (target 2e-9), current 232 µA (target 200 µA), gain 1086 V/V,
+    PM 64.7°, SR 62 V/µs, UGBW 109 MHz, noise 22 mV;
+  - Pareto front: 6 designs, 470–880 µm² and 230–950 µA.
+
+  | sims | mean step reward | feasible |
+  |---|---|---|
+  | 1–550 (warm-up) | −2.85 | 0 |
+  | 551–1500 | −0.83 | 6 |
+  | 1501–2500 | −0.77 | 24 |
+  | 2501–3500 | −1.14 | 1 |
+  | 3501–5000 | −1.70 | 11 |
+- **Interpretation:**
+  - TD3 learns quickly at first: −2.85 → −0.8, and the episode score goes from −30 to about −3.
+  - **After ~2500 sims the performance gets worse again** and noisier (episode scores −10 … −30); no better design
+    after sim 1677.
+  - **Not the cause:** saturated actions (the share of parameters at the grid ends stays at the warm-up level,
+    13–19 % / 5–9 %).
+  - **Late phase:** gain is violated in 90 % of the steps, SR in 68 %, UGBW in 61 %, PM in 41 %.
+  - Hypotheses for 3.5 (not verified): the critic lr 1e-3 is too high, so Q drifts late (overestimation / forgetting);
+    the constant σ 0.1 prevents refining; the 10-step time-limit `done`.
+- **Note on the course plot:** `max_reward.png` is drawn over `reward_history` (only step rewards), so its x-axis
+  labelled "# Simulation" is really the step index (0…4545). For the report, draw over the `sim` column of
+  `designs.csv`.
+- **For Brent:** look at `output_figs/start_values_s123456/` together; then tuning (3.5).
+
+
+### 2026-11-05 10:45 — 3.5: tuning stage A (one hyperparameter at a time)
+**Goal:** see which of the 5 required hyperparameters matter, before spending simulations on repeated runs.
+
+**What changed:**
+- New `CAD/analysis/tuning_summary.py`: one table row per run folder (hyperparameters + best FoM, when it was found,
+  first feasible design, number of feasible designs, Pareto-front size, mean reward of the last 1500 sims, failures).
+- New `CAD/analysis/fom_evolution.py`: how the FoM evolves during the runs, one plot column per hyperparameter
+  (base run + the runs that change only that one). Top row: best FoM so far vs simulation; bottom row: mean reward of
+  the last 500 sims. Plot: `CAD/output_figs/fom_evolution_A.png`.
+- Runs `CAD/runs/A_*` (+ `output_figs/A_*`, `solutions/A_*.csv`). No code of the env/agent/runner changed.
+
+**How it works:**
+- 9 runs of 5000 simulations, seed 123456, each changes **one** hyperparameter from the start values
+  (σ 0.1, batch 128, w 500, actor lr 3e-4, critic lr 1e-3).
+- Two runs at a time, each in its own git worktree (scratchpad `lane_a`, `lane_b`, at `6d416fe`): `clean.sh` empties
+  `no_backup/` every 100 steps, which would delete the files of a run sharing the folder. `OMP_NUM_THREADS=1` so the
+  two runs don't fight over the 2 cores. ~15 min per run.
+- `A_base_1thread` (start values, 1 thread) gives exactly the numbers of `start_values_s123456` → the runs are
+  reproducible and the thread setting doesn't change anything.
+
+**Results:**
+
+| run | changed | best FoM | @sim | first feasible | n feasible | Pareto | mean last 1500 |
+|---|---|---|---|---|---|---|---|
+| A_pilr_1e-4 | actor lr 1e-4 | **0.696** | 2821 | 709 | 184 | 12 | −0.53 |
+| A_w_250 | w 250 | 0.683 | 1114 | 792 | 1179 | 10 | −0.15 |
+| A_w_1000 | w 1000 | 0.682 | 2852 | 1072 | 1170 | 13 | **+0.02** |
+| A_qlr_3e-4 | critic lr 3e-4 | 0.659 | 2484 | 2292 | 19 | 4 | −0.51 |
+| A_base_1thread | — | 0.615 | 1677 | 663 | 42 | 6 | −1.70 |
+| A_noise_0.2 | σ 0.2 | 0.603 | 4591 | 663 | 102 | 6 | −0.55 |
+| A_noise_0.05 | σ 0.05 | 0.579 | 4282 | 2367 | 12 | 2 | −1.25 |
+| A_batch_64 | batch 64 | 0.511 | 2929 | 1161 | 236 | 4 | −1.09 |
+| A_batch_256 | batch 256 | 0.474 | 1399 | 1399 | 16 | 3 | −1.14 |
+
+FoM evolution (best so far at 1000/2000/3000/5000 sims; mean reward of the last 500 sims at 3000 → 5000):
+
+| run | best @1000 → 2000 → 3000 → 5000 | mean @3000 → 5000 |
+|---|---|---|
+| start values | 0.27 → 0.62 → 0.62 → 0.62 | −0.77 → −1.86 |
+| σ 0.05 | −0.19 → −0.07 → 0.49 → 0.58 | −1.33 → −1.17 |
+| σ 0.2 | 0.36 → 0.60 → 0.60 → 0.60 | −0.50 → −0.62 |
+| batch 64 | −0.19 → 0.48 → 0.51 → 0.51 | −0.14 → −0.86 |
+| batch 256 | −0.19 → 0.47 → 0.47 → 0.47 | −0.94 → −1.77 |
+| w 250 | 0.57 → 0.68 → 0.68 → 0.68 | 0.03 → −0.18 |
+| w 1000 | −0.15 → 0.59 → 0.68 → 0.68 | 0.00 → −0.05 |
+| actor lr 1e-4 | 0.29 → 0.63 → 0.70 → 0.70 | −0.44 → −0.30 |
+| critic lr 3e-4 | −0.18 → −0.01 → 0.66 → 0.66 | −0.71 → −0.52 |
+
+**Interpretation:**
+- The best FoM saturates early: every run has its best design by ~sim 3000, most by sim 2000.
+- With the start values the agent **degrades** in the second half (mean −0.4 at sim 2500 → −1.86 at 5000). Most
+  changes keep it stable: actor lr 1e-4, critic lr 3e-4, w 250/1000, σ 0.2. A slower actor (TD3 paper §5: the actor
+  should change slowly relative to the critic) fits that picture.
+- The warm-up mostly **shifts the curve in time**: the mean reward rises right after the random warm-up ends
+  (w steps = w·1.1 sims). w 250 finds good designs earliest; w 1000 ends with the best mean (more varied data in the
+  buffer before learning starts).
+- σ 0.05 (too little exploration) and critic lr 3e-4 find their first feasible design late (~sim 2300).
+- Batch 64 and 256 are both worse than 128 on best FoM.
+- **Caveat:** one seed per setting. Changing any hyperparameter changes the whole random trajectory, so w 250 and
+  w 1000 both beating 500 may be partly luck. That is why stage B repeats the best settings with 3 seeds.
+
+**Decisions:**
+- Stage B: the start values, actor lr 1e-4, w 1000, and the combination actor lr 1e-4 + w 1000; seeds 123456, 1, 2
+  (seed 123456 of the first three is from stage A). 9 new runs, ~75 min. w 1000 rather than w 250: better and still
+  rising late mean; w 250 is kept as the alternative if w 1000 doesn't hold up.
+
+**Verification:** `tuning_summary.py` reproduces the hand-computed numbers of 3.4 on `start_values_s123456`;
+`A_base_1thread` equals that run exactly. Plot checked visually.
+
+**For Brent to check:** `CAD/output_figs/fom_evolution_A.png`. Which criterion matters most for the final choice:
+best FoM, number of feasible designs, or a stable mean at the end?
