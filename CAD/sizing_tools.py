@@ -41,6 +41,22 @@ def to_builtin(value):
     return value
 
 
+def compact(candidate, units=True):
+    """A copy of a candidate with rounded numbers, for the tool results the LLM reads (fewer tokens per result).
+
+    Parameters to 6 significant digits (1.4999999999999998e-06 -> 1.5e-06; the validation accepts them back), specs
+    and normalized specs to 4, the reward to 4 decimals. units=False leaves out spec_units (get_status lists them once).
+    The full precision stays in the candidate history and in harness_history.csv.
+    """
+    short = lambda value, digits: value if isinstance(value, int) else float(f"{value:.{digits}g}")
+    copy = {key: value for key, value in candidate.items() if units or key != "spec_units"}
+    copy["parameters"] = {name: short(value, 6) for name, value in candidate["parameters"].items()}
+    copy["specs"] = {name: short(value, 4) for name, value in candidate["specs"].items()}
+    copy["normalized_specs"] = {name: short(value, 4) for name, value in candidate["normalized_specs"].items()}
+    copy["reward"] = round(candidate["reward"], 4)
+    return copy
+
+
 def check_count(value, name, maximum):
     """Reject booleans, non-integers, and out-of-range requests."""
     if type(value) is not int or not 1 <= value <= maximum:
@@ -105,7 +121,7 @@ class SizingExperiment:
         candidate = self._record_and_log(self.evaluation_env, params, specs, "simulate", reason)
         if candidate is None:
             raise RuntimeError("ngspice failed for this design (logged as failed, not recorded): try other values.")
-        return candidate
+        return compact(candidate)
 
     def warmup(self, n_steps: int, reason: str = "") -> dict:
         """Append exactly n_steps random transitions, without updating weights.
@@ -151,11 +167,9 @@ class SizingExperiment:
             "episode_in_progress": self.observation is not None,
             "candidates_measured": len(self.candidates),
             "candidates_meeting_all_specs": sum(c["hard_constraints_satisfied"] for c in self.candidates.values()),
-            "targets": self.env.dict_targets,
-            "hard_constraints": list(self.env.hard_constraints),
-            "optimization_targets": list(self.env.optimization_targets),
-            "spec_units": SPEC_UNITS,
-            "best_candidates": deepcopy(ranked[:k]),  # copies: the caller can't change the history
+            "spec_units": SPEC_UNITS,  # once here, not in every candidate (fewer tokens)
+            # compact copies: the caller can't change the history, and the numbers are rounded for the LLM
+            "best_candidates": [compact(candidate, units=False) for candidate in ranked[:k]],
         })
 
     def _validate_parameters(self, parameters):
@@ -251,7 +265,7 @@ class SizingExperiment:
         except Exception as error:
             raise RuntimeError(f"{completed} of {n_steps} steps were completed and kept before this error: {error}. "
                                "Inspect get_status() before retrying.") from error
-        status = self.get_status()
+        status = self.get_status(k=3)  # the top 3 (fewer tokens per RL batch); get_status(k) gives more
         status.update({"steps_completed": completed, "experiences_added": added,
                        "simulator_calls_used": self.simulator_calls - calls_before,
                        "updates_performed": self.updates - updates_before})
@@ -279,7 +293,7 @@ class SizingExperiment:
                "netlist": os.path.basename(env.netlist)}
         row.update(parameters)
         for name in SPEC_UNITS:
-            row[name] = to_builtin(candidate["specs"][name]) if candidate else ""
+            row[name] = to_builtin(specs[name]) if candidate else ""  # full precision
         row["reward"] = candidate["reward"] if candidate else ""
         row["hard_satisfied"] = candidate["hard_constraints_satisfied"] if candidate else ""
         row["failed"] = candidate is None

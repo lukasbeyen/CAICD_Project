@@ -1505,3 +1505,40 @@ agy's own system prompt and tool schemas are not included):
 
 Claude Code's own usage can't be read from inside the session, and isn't comparable: every call rereads this very long
 conversation.
+
+### 2026-11-06 — 4.8: token savings (Brent's choice: leaner tool results, leaner log entries, circuit details into the skill)
+**Not done, on purpose (Brent):** relaxing the one-change rule; a batch/sweep tool (explainability first).
+
+**What changed:**
+- `CAD/sizing_tools.py`:
+  - a new `compact(candidate, units)` makes the copy the LLM reads: parameters to 6 significant digits
+    (`1.4999999999999998e-06` → `1.5e-06`; the validation accepts them back), specs and normalized specs to 4, the
+    reward to 4 decimals;
+  - `simulate` returns the compact copy (with `spec_units`, as the template asks);
+  - `get_status` lists `spec_units` once instead of in every candidate, and drops the static targets/constraint lists
+    (they are in `AGENTS.md`);
+  - `warmup`/`train` include the top 3 instead of 5;
+  - the history CSV and the candidate store keep full precision.
+- `AGENTS.md`: the device table and the allowed values moved to the skill `two-stage-opamp-design` (which the analyst
+  and the designer load); a 4-line circuit summary stays. Subagent summaries ≤ 150 words (was 300); designs as changes
+  relative to the previous best, all 20 values only for a new best.
+- The agents' output sections: ≤ 150 words (reviewer ≤ 200 + its tables); the designer refers to simulation numbers
+  instead of listing every simulation (the history has every reason); the RL operator gives the top 3.
+- `design-log` skill: entries ≤ 150 words, no separate "Goal", changes + simulation numbers instead of repeating
+  reasons.
+- **A factual correction:** the designer prompt and the skill called Cc "the largest single area item". By the
+  area formula, Rc is (9.8 kΩ ≈ 700 µm² vs 0.3 pF ≈ 100 µm²); this misled the agy reviewer. Fixed; this is arithmetic
+  from the area formula, not a session result, so the prompts stay free of results.
+- Tests: `test_sizing_tools.py` +1 (compact results, full-precision history), `test_mcp_server.py` adapted; all 130
+  pass.
+
+**Effect** (measured on the test run's tool traffic + the same turn model):
+- tool results 50.3 kB → 31.3 kB (−38 %);
+- the whole session ≈ 254k → 220k input tokens (−13 %) and 13k → 10k output tokens (−21 %).
+
+The fixed context per designer turn still dominates (`AGENTS.md` + `designer.md` + the skill ≈ 13 kB), and so does
+the orchestrator's number of turns (≈ 100k of the 220k). Next lever, within Brent's constraints: the orchestrator
+writes its routing decision in the same log entry as the subagent's summary (about half its turns). Not done.
+
+**Note for the report:** the agy session of 5 Nov ran with the previous version (300-word summaries, Cc called the
+largest area item).

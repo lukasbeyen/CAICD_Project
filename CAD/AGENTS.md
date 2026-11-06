@@ -1,31 +1,14 @@
-# Explainable sizing harness for a two-stage Miller opamp (H05D7 CAD project, milestone 4)
+# Explainable sizing harness for a two-stage Miller opamp 
 
 You are part of an LLM-based sizing harness. The goal: size the opamp below so that it meets **all hard specs** while
 **area and supply current are as low as possible**, with **as few simulations as possible**, and with a **traceable
 reason for every decision**. A designer must be able to follow and trust every step: the harness is not a black box.
 
-## The circuit (netlist `ngspice_interface/files/input_netlists/TwoStage.cir`, 45 nm PTM models, TT, 27 °C)
-`S = m·W/L` is a transistor's size ratio (m = number of parallel fingers).
-
-| parameters | device(s) | role |
-|---|---|---|
-| `mp1 wp1 lp1` | mp1 + mp2 (PMOS, identical) | current-mirror load of the input pair (mp1 diode-connected) |
-| `mn1 wn1 ln1` | mn1 + mn2 (NMOS, identical) | input differential pair |
-| `mn3 wn3 ln3` | mn3 (NMOS, diode) | bias reference: carries Ibias = 30 µA, sets the gate of mn4 and mn5 |
-| `mn4 wn4 ln4` | mn4 (NMOS) | tail current source: I_tail ≈ 30 µA · S4/S3 |
-| `mp3 wp3 lp3` | mp3 (PMOS) | second stage, common source; gate = first-stage output |
-| `mn5 wn5 ln5` | mn5 (NMOS) | second-stage current sink: I2 ≈ 30 µA · S5/S3 |
-| `cap` | Cc | Miller compensation capacitor, first-stage output → output |
-| `res` | Rc | nulling resistor in series with Cc |
-
-Fixed: load CL = 10 pF, VDD = 1.2 V, input common mode 0.6 V, Ibias = 30 µA.
-
-**Allowed values** (SI units: m, F, Ω; anything else is rejected by the tools):
-- `m*`: integers 1 … 24
-- `w*`: 0.25 µm … 2.75 µm in steps of 0.25 µm (2.5e-07 … 2.75e-06)
-- `l*`: 45, 90, 135 or 180 nm (4.5e-08, 9e-08, 1.35e-07, 1.8e-07)
-- `cap`: 0.1 pF … 9.9 pF in steps of 0.1 pF
-- `res`: 0 … 9800 Ω in steps of 100 Ω
+## The circuit
+A two-stage Miller opamp (45 nm, TT, 27 °C) with **20 sizing parameters**: m/W/L of 6 transistor groups (input pair,
+mirror load, bias diode, tail source, second stage, its current sink), Cc and Rc. Fixed: CL = 10 pF, VDD = 1.2 V,
+Ibias = 30 µA. **The device map, the allowed values of every parameter and the design equations are in the skill
+`two-stage-opamp-design`**: the analyst and the designer load it before they design or simulate.
 
 ## The specs
 | spec | target | kind | measured as |
@@ -81,15 +64,16 @@ in `.agents/agents/`, pass each one only the context it needs, and keep the shar
 5. **End with the reviewer's final summary** in the log.
 
 **Context management:** give a subagent the task, the relevant log entries (the analyst summary, the last round, the
-3 best designs from `get_status`), never the whole history. Each subagent returns a compact summary (≤ 300 words plus
-a design table); you append it to the log.
+3 best designs from `get_status`), never the whole history. Each subagent returns a compact summary (≤ 150 words;
+designs as the changes relative to the previous best, all 20 values only for a new best design); you append it to
+the log in the format of the `design-log` skill.
 
 ## Rules for every agent
 - **Every `simulate`, `warmup` and `train` call has a `reason`:** the hypothesis and the expected effect, in circuit
   terms (e.g. "PM 52° < 60°: raise Rc from 1 k to 2 k to move the zero into the LHP, expect +5° PM, GBW unchanged").
 - **Only report numbers that a tool returned.** Never estimate a spec and present it as measured.
 - **Change one thing (or one coupled group) per simulation**, so the effect can be attributed.
-- Keep every value on its grid (see "Allowed values").
+- Keep every value on its grid (the allowed values are in `two-stage-opamp-design`).
 - Mention the simulation count (`get_status().simulator_calls`) in every summary.
 - Use the skills: `two-stage-opamp-design` (equations, knobs, trade-offs), `rl-sizer` (when RL is worth it),
   `design-log` (the format of the memory).

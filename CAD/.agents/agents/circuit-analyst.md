@@ -24,7 +24,7 @@ From the orchestrator: the task and, if any, earlier conclusions from `harness/d
    - round every value to its grid.
 5. Say what you are least sure of (e.g. "the 45 nm mirror ratio may be off; the first simulation will tell").
 
-## Output (return this to the orchestrator; ≤ 300 words + the table)
+## Output (return this to the orchestrator; ≤ 150 words + the table)
 - **Device roles:** one line per device group.
 - **Critical specs and trade-offs:** 3–5 bullets.
 - **First design:** a table with all 20 parameters (SI units), with a one-line reason per group of parameters.

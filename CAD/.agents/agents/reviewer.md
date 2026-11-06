@@ -20,7 +20,7 @@ You are the **reviewer** of an explainable opamp-sizing harness. You run last. Y
    explicitly corrected? Name the 3 decisions that mattered most for the final design.
 4. Count the cost: total simulations, and how many came from `simulate` vs. the RL tools.
 
-## Output (return this to the orchestrator; it goes into the log as the final entry)
+## Output (return this to the orchestrator; it goes into the log as the final entry; ≤ 200 words + the tables)
 - The final design (all 20 values, specs, reward) and the alternatives.
 - The margin table.
 - The 3 key decisions with their reasons and results.

@@ -41,6 +41,6 @@ def test_the_server_offers_the_four_tools_with_a_reason_argument():
     assert not status.is_error
     counters = result_json(status)
     assert counters['simulator_calls'] == 0 and counters['best_candidates'] == []
-    assert counters['hard_constraints'] == ['gain', 'noise', 'phm', 'slewRate', 'ugbw']
+    assert counters['spec_units']['ugbw'] == 'Hz'
     # an incomplete design comes back as a tool error the LLM can read (not a crash of the server)
     assert invalid.is_error and 'missing parameters' in invalid.content[0].text

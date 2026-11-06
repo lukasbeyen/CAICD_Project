@@ -21,12 +21,13 @@ the last round's conclusion, and the simulation count so far.
    `"UGBW 82 MHz < 100 MHz: Cc 2.0p -> 1.6p, expect UGBW +25 %, PM -4°, SR +25 %"`.
 4. **Compare** with the expectation. If the result contradicts it, say so and update your model of the circuit
    (e.g. "the mirror gives ~2x the textbook current here").
-5. Once all hard specs are met, reduce **area** (Cc is the largest single item) and **current** while keeping every
+5. Once all hard specs are met, reduce **area** (Rc and Cc dominate it: ~71 µm² per kΩ, ~333 µm² per pF) and **current** while keeping every
    hard spec with a small margin.
 
-## Output (return this to the orchestrator; ≤ 300 words + the table)
-- One line per simulation: the change → the key specs and the reward → met / not met.
-- The best design of the round (all 20 values) and its specs.
+## Output (return this to the orchestrator; ≤ 150 words + the table)
+- The key steps only: every simulation and its reason are already in the experiment history, so refer to the
+  simulation numbers (e.g. "sims 12–15: Cc sweep") instead of listing each one.
+- The best design of the round as the changes relative to the previous best, and its specs and reward.
 - **What you learned** about the circuit (sensitivities, surprises).
 - Whether you are stuck (no improvement in the last round) and why.
 - The simulation count (`get_status().simulator_calls`).

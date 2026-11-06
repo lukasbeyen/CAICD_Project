@@ -126,7 +126,7 @@ def test_simulate_returns_the_scored_design_and_leaves_the_rl_state_alone(make_e
     # scored with the env's own functions
     env = experiment.evaluation_env
     reward, hard = env.reward_computation(env.normalize_specs(env.simulation_engine.measure_metrics()))
-    assert candidate['reward'] == pytest.approx(reward) and candidate['hard_constraints_satisfied'] == hard
+    assert candidate['reward'] == pytest.approx(reward, abs=1e-4) and candidate['hard_constraints_satisfied'] == hard
     assert candidate['source'] == 'simulate' and set(candidate['specs']) == set(env.dict_targets)
 
 
@@ -227,3 +227,20 @@ def test_history_has_one_row_per_simulator_call_with_source_and_reason(make_expe
     assert list(rows.source) == ['reset'] + ['warmup'] * 4 + ['simulate'] + ['train'] * 2
     assert rows.loc[rows.source == 'simulate', 'reason'].item() == 'raise mn1 for gain'
     assert not math.isnan(rows.elapsed_s.iloc[-1])
+
+
+def test_tool_results_are_compact_but_the_history_keeps_full_precision(make_experiment):
+    # fewer tokens for the LLM: rounded numbers, the units once per status, the top 3 in warmup/train results
+    experiment = make_experiment(metrics={'area': 8.634113333333333e-10, 'current': 0.00020590559,
+                                          'gain': 663.6944800049262, 'noise': 0.021489595, 'phm': 65.7972831540237,
+                                          'slewRate': 55.960804486038334, 'ugbw': 95057613.34824488})
+    design = dict(a_design(experiment), wn1=1.4999999999999998e-06)
+    result = experiment.simulate(design)
+    assert result['parameters']['wn1'] == 1.5e-06 and type(result['parameters']['mn1']) is int
+    assert result['specs']['gain'] == 663.7 and result['specs']['ugbw'] == 9.506e7
+    assert result['spec_units']['ugbw'] == 'Hz'  # simulate returns spec_units (template)
+    assert experiment._validate_parameters(result['parameters']) == experiment._validate_parameters(design)
+    status = experiment.get_status(k=1)
+    assert 'spec_units' in status and 'spec_units' not in status['best_candidates'][0]
+    assert len(experiment.warmup(12)['best_candidates']) == 3
+    assert history(experiment).gain.iloc[0] == 663.6944800049262  # the CSV keeps the full value

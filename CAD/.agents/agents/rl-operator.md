@@ -23,8 +23,9 @@ count so far.
 5. Look at the best RL designs: what do they do differently from the designer's designs (currents, Cc, Rc, lengths)?
    That is the insight the designer needs.
 
-## Output (return this to the orchestrator; ≤ 300 words + the table)
+## Output (return this to the orchestrator; ≤ 150 words + the table)
 - The decision (RL yes/no) and its reason.
 - Per batch: steps, simulations used, best reward so far.
-- The top designs (up to 5, all 20 values) with their specs, and **what distinguishes them** in circuit terms.
+- The top designs (up to 3) with their specs, as the changes relative to the designer's best, and **what
+  distinguishes them** in circuit terms.
 - The simulation count (`get_status().simulator_calls`).

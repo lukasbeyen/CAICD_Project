@@ -1,8 +1,31 @@
 ---
 name: two-stage-opamp-design
-description: Hand-design knowledge for the two-stage Miller opamp of this project - first-order equations, which parameter moves which spec (the knobs), the trade-offs, and the area formula. Use it to make a first design, to diagnose a failing spec, and to choose the next change.
+description: The circuit of this project (device map, allowed parameter values) and hand-design knowledge - first-order equations, which parameter moves which spec (the knobs), the trade-offs, and the area formula. Use it to make a first design, to diagnose a failing spec, and to choose the next change.
 ---
-# Two-stage Miller opamp: equations, knobs and trade-offs
+# Two-stage Miller opamp: the circuit, the allowed values, equations, knobs and trade-offs
+
+## The circuit (netlist `ngspice_interface/files/input_netlists/TwoStage.cir`, 45 nm PTM models, TT, 27 °C)
+`S = m·W/L` is a transistor's size ratio (m = number of parallel fingers).
+
+| parameters | device(s) | role |
+|---|---|---|
+| `mp1 wp1 lp1` | mp1 + mp2 (PMOS, identical) | current-mirror load of the input pair (mp1 diode-connected) |
+| `mn1 wn1 ln1` | mn1 + mn2 (NMOS, identical) | input differential pair |
+| `mn3 wn3 ln3` | mn3 (NMOS, diode) | bias reference: carries Ibias = 30 µA, sets the gate of mn4 and mn5 |
+| `mn4 wn4 ln4` | mn4 (NMOS) | tail current source: I_tail ≈ 30 µA · S4/S3 |
+| `mp3 wp3 lp3` | mp3 (PMOS) | second stage, common source; gate = first-stage output |
+| `mn5 wn5 ln5` | mn5 (NMOS) | second-stage current sink: I2 ≈ 30 µA · S5/S3 |
+| `cap` | Cc | Miller compensation capacitor, first-stage output → output |
+| `res` | Rc | nulling resistor in series with Cc |
+
+Fixed: load CL = 10 pF, VDD = 1.2 V, input common mode 0.6 V, Ibias = 30 µA.
+
+## Allowed values (SI units: m, F, Ω; anything else is rejected by the tools)
+- `m*`: integers 1 … 24
+- `w*`: 0.25 µm … 2.75 µm in steps of 0.25 µm (2.5e-07 … 2.75e-06)
+- `l*`: 45, 90, 135 or 180 nm (4.5e-08, 9e-08, 1.35e-07, 1.8e-07)
+- `cap`: 0.1 pF … 9.9 pF in steps of 0.1 pF
+- `res`: 0 … 9800 Ω in steps of 100 Ω
 
 Notation: `S = m·W/L` per transistor. Pair = mn1/mn2 (gm1), mirror load = mp1/mp2, second stage = mp3 (gm6) with
 the current sink mn5, tail = mn4, bias diode = mn3 (30 µA). CL = 10 pF.
@@ -47,11 +70,11 @@ first simulations to measure how far off they are, and correct your model (say s
 | slew rate ↑ | I_tail ↑, or Cc ↓ | current ↑ / PM ↓ |
 | noise ↓ | gm1 ↑ vs. the load; larger W·L of the pair and the load; not more gain/bandwidth than needed | area ↑ |
 | current ↓ | lower S4/S3 and S5/S3 (e.g. a larger mn3) | gm1 and gm6 ↓ → UGBW, PM, SR ↓ |
-| area ↓ | Cc ↓ (the largest single item); small Rc; fewer/shorter fingers | Cc ↓ costs PM |
+| area ↓ | Rc ↓ and Cc ↓ (they dominate: a 9.8 kΩ Rc ≈ 700 µm², 1 pF ≈ 333 µm²); fewer/shorter fingers | Cc ↓ costs PM; Rc ↓ moves the LHP zero |
 
 ## Area estimate (the `area` spec)
 - Transistor: m · (W·L + 2·(W·160 nm + 50 nm·L)). The pair (mn1) and the mirror load (mp1) count **twice**
   (two devices each).
 - Cc: about **333 µm² per pF** (100 µm² per 300 fF).
 - Rc: about **71 µm² per kΩ**.
-- Target: 2000 µm². A 3 pF Cc alone is half of it.
+- Target: 2000 µm². A 3 pF Cc alone is half of it; a 9.8 kΩ Rc is about 700 µm².

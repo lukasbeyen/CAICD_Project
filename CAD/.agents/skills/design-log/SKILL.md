@@ -18,14 +18,14 @@ summary that explains it.
 - Every entry mentions the simulation count so far (`get_status().simulator_calls`).
 - Start every session with a header: `## Session <date time>`, plus the model in use.
 
-## Entry format
+## Entry format (≤ 150 words per entry)
 ```
 ### <n>. <agent>: <short title>   (simulations so far: <N>)
-- **Goal:** what this step had to achieve.
-- **Reasoning:** the circuit argument (equations, sensitivities) behind the decision.
-- **Actions:** the tool calls, with the key parameter changes (e.g. "Cc 2.0 → 1.6 pF").
-- **Result:** the specs and the reward that came back; which hard specs are met.
-- **Conclusion / next:** what was learned and what happens next, and why.
+- **Reasoning:** the circuit argument behind the decision (at most 3 bullets).
+- **Actions:** the key parameter changes relative to the previous best (e.g. "Cc 2.0 → 1.6 pF"), with the
+  simulation numbers (e.g. "sims 5–8"): every simulation's reason is already in the history, don't repeat them.
+- **Result:** the key specs and the reward; which hard specs fail. All 20 values only for a new best design.
+- **Next:** what was learned and what happens next, and why.
 ```
 
 ## Orchestrator decisions
