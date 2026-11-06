@@ -2408,3 +2408,34 @@ differs).
 - A one-simulation smoke test in `s1` worked (the copy's own `sizing_tools.py`, its own `runs/`); its run folder
   was deleted.
 - Seeds 123456, 1, 2: the same as the milestone 3 TD3 runs.
+
+### 2026-11-06 — 4.v4.1: three seeds in parallel (results)
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-3seeds/` (commit `eb08fdd`).
+
+**Result:**
+
+| seed | final FoM | design |
+|---|---|---|
+| 123456 | 0.636 | 324 µA, 545 µm² |
+| 1 | 0.421 | 235 µA, 1329 µm² |
+| 2 | 0.410 | 306 µA, 1031 µm² |
+| **mean** | **0.489 ± 0.127** | |
+
+≈ 1656 sims each, 8.4–9.8 min in parallel. 14–18 requests and 275–400k cache read per session.
+
+**Checks:**
+- All three read only the allowed files.
+- Seed 1 recovered from a 99-transition buffer with `warmup(1)`.
+- **Seed 2 inverted the stop rule:** it stopped although every margin was > 3 %, and so skipped ≤ 3 refinements.
+
+**Interpretation:**
+- A large seed spread, as in milestone 3's TD3.
+- RL 1 with 500 steps gives a poor start, and the LLM's 5 refinements only lift it to 0.06–0.25.
+- The warm-up's climb then depends on where it starts (+0.56 / +0.34 / +0.07).
+- The warm start in train 2: +0.01 / 0 / +0.09.
+
+**For Brent:**
+- Make the stop rule unambiguous.
+- Let the LLM step aim higher: e.g. hand over a design that meets all specs with margin, using up to 5 sims
+  iteratively.
+- Compare with the LLM-first runs on the same seeds.
