@@ -10,7 +10,7 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 - Milestones 1 and 2 on `main` (PR #8).
 - Milestone 3 on `feat/td3` (not pushed).
 - Milestone 4 on `feat/m4-harness` (from `feat/td3`). Both merged with `main` (Lukas's M3) on 6 Nov and pushed as
-  **`einstein_LLM`**. **Current branch: `feat/m4-tutor`** (harness v3.2, from `feat/m4-hybrid`; not pushed; 160 tests pass).
+  **`einstein_LLM`**. **Current branch: `feat/m4-template`** (harness v4: only the course template's tools; from `feat/m4-tutor` = v3.2; not pushed; 133 tests pass).
 - Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
 - Deadline: Sun 8 Nov 2026, 23:59.
 
@@ -2071,3 +2071,57 @@ tools) → `tutor_tools.py` → `sizing_tools.py` (the course's TODOs, filled in
 - M4 code beyond the template: 565 → 408 lines.
 
 **For Brent to check:** nothing pushed.
+
+### 2026-11-06 — 4.v4: only the course's tools; the warm-up explores around the LLM's design
+**Goal:** Brent: no server or tools of our own. Use the received `mcp_server.py` and `sizing_tools.py` the
+template way, with the LLM's conclusions feeding the warm-up. He chose option B (the warm-up around the best design)
+and one test run before his own agy session.
+
+**What changed** (branch `feat/m4-template` from `feat/m4-tutor`, commit `3d85360`; test run in a second commit):
+- `CAD/sizing_tools.py`: `_warmup_action` and `to_action` (lines 247 276 285 ). In `_run_steps`, the warm-up branch calls
+  `self._warmup_action()` instead of `self.env.action_space.sample()`.
+- `CAD/mcp_server.py`: unchanged. `.agents/mcp_config.json` now starts it.
+- Deleted: `tutor_tools.py`, `tutor_mcp_server.py`, their tests, `harness/design_log.md` (no `log_entry` any
+  more).
+- Prompts rewritten for the 4 template tools: `AGENTS.md`, `tutor.md`, `reviewer.md`, the `rl-tutoring` skill.
+  `opamp-design` is unchanged.
+- `tests/test_sizing_tools.py` (+3): the inverse `to_action`; the warm-up around the best design (the L's
+  practically fixed, the multiplicities ±1 step, the centre follows the best); the uniform warm-up before any
+  `simulate`.
+- `tests/test_harness_files.py`: the 4 template tools; the config starts `mcp_server.py`.
+
+**How it works:**
+- TD3's action is a whole design. `to_action` gives the centre of each parameter's action bin (the inverse of
+  `action_refine`'s `floor((a+1)/2·(n−1))`).
+- The warm-up action = that centre for the best measured design + N(0, σ) with σ = `agent.expl_noise` = 0.1, the
+  template's own TD3 exploration noise, clipped to [−1, 1]. The noise is drawn from `env.np_random`, so a seed
+  reproduces it.
+- σ 0.1 against the bin widths 2/(n−1):
+  - multiplicities (n = 24, bin 0.087): ≈ ±1 step;
+  - widths (n = 11, bin 0.2): a step in 32 % of the draws;
+  - L (n = 4, bin 0.67): practically never (0.09 %);
+  - Cc, Rc (n = 99): ≈ ±5 steps.
+- So the warm-up is a random local search around the LLM's design, and its 100 transitions teach TD3's critics
+  that region.
+- The template's 10-step episodes still reset to a uniformly random design (one simulation each). A reset moves the
+  centre only if it is better.
+- Only when a design has source `simulate` (the LLM gave one); otherwise the template's uniform warm-up.
+
+**Decisions:**
+- σ = the TD3 exploration noise, so no new hyperparameter. The template hyperparameters stay as given.
+- A moving centre (the best of all measured designs, not only the LLM's): it can then climb.
+- The < 200 budget is a prompt rule only; no tool of our own enforces it.
+
+**Verification:**
+- 133 tests pass.
+- Test run (Claude Code following only the prompt files; `harness/sessions/2026-11-06_claude-code-template/`):
+  - nominal −0.559 → 2 fixes → 0.606 (3 sims);
+  - `warmup(100)` → 0.646;
+  - `train(60)` → no gain;
+  - refining: 0.662, then **0.678**;
+  - **189 sims, 4.1 min, ≈ 165k input tokens** (turn model; v3.2 ≈ 39k).
+
+**For Brent to check / open questions:**
+- v4 costs ≈ 4× v3.2's tokens: each refining design is a `simulate` turn, and the results are full candidates.
+  Fewer refining designs (e.g. 1 round of 3) would cut ≈ 60k.
+- Is the template way worth that cost? v3.2 stays on `feat/m4-tutor` if you want to compare.

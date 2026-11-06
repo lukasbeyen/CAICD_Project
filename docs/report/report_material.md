@@ -443,6 +443,49 @@ A disciplined test run afterwards (Claude Code following only the prompt files, 
 - the LLM sets up the space and the warm-up and makes the circuit-level coupled move;
 - the RL does the local search and supplies many feasible alternatives (124 of 177 designs met all specs).
 
+
+### Version 4: only the course's tools (branch `feat/m4-template`), the LLM steers the RL's warm-up
+**Why:** Brent's decision: no tools or servers of our own; milestone 4 uses the received `mcp_server.py` with its 4
+tools (`simulate`, `warmup`, `train`, `get_status`).
+
+**The only channel from the LLM to the RL:** our implementation of the template's `warmup` TODO.
+- Once the LLM has simulated a design, the random warm-up actions are drawn **around the best measured design**
+  with TD3's own exploration noise (σ 0.1), instead of uniformly over the grid. The docstring ("random transitions,
+  without updating weights") still holds.
+- The centre follows the best design, so the warm-up is a random local search around the LLM's design.
+- Before any `simulate`, it is the template's uniform warm-up.
+- ≈ 15 lines in `sizing_tools.py` (`_warmup_action`, `to_action`).
+- `tutor_tools.py` and `tutor_mcp_server.py` are gone; v3.2 stays on `feat/m4-tutor`.
+
+**The pipeline** (prompts only): tutor:
+1. a nominal from the equations, checked with ≤ 6 `simulate`;
+2. `warmup(100)` around it;
+3. `train(n)`;
+4. 2 rounds of ≤ 5 `simulate` refinements at the best (probe, then combine).
+
+Then the reviewer (`get_status`). The < 200 budget is a rule in the prompts; no tool enforces it.
+
+**Test run** (Claude Code following only the prompt files; `CAD/harness/sessions/2026-11-06_claude-code-template/`):
+- the nominal (L 180 nm) fails noise (67 mV: the 10× gain surplus, noise ∝ √(A0·GBW)), UGBW and PM;
+- all L → 90 nm, then a wider pair: all specs met (**0.606**, 3 sims);
+- `warmup(100)` → **0.646** (13 feasible designs);
+- `train(60)` → no gain (an untrained actor, far too few updates);
+- refining:
+  - round 1: Cc 0.4 pF → 0.662;
+  - round 2: + mp3 −1, mn5 −1 → **0.678** (207.7 µA, 863 µm², UGBW +0.8 %);
+- **189 simulations, 4.1 min, FoM 0.678, ≈ 165k input tokens** (turn model). The 10 refining `simulate` calls are one
+  turn each, and the template's results are larger (full candidates, `get_status(3)` after every RL call).
+
+| | tokens (input) | simulations | best FoM | found by |
+|---|---|---|---|---|
+| v3.2 (own tools: `setup_rl`, `run_rl`, `refine`) | ≈ 39k | 101 | 0.669–0.686 | the LLM's refine, after the RL |
+| **v4 (the course's 4 tools)** | **≈ 165k** | **189** | **0.678** | the warm-up around the LLM's design, then the LLM's refine |
+
+**Reading:**
+- With the template alone, the LLM still steers the RL: the warm-up around its design improved on it.
+- TD3's training adds nothing within this budget.
+- The price of the generic tools is ≈ 4× the tokens and ≈ 2× the simulations of v3.2, for a similar FoM.
+
 ---
 
 ## Tests overall
@@ -452,7 +495,7 @@ A disciplined test run afterwards (Claude Code following only the prompt files, 
 |---|---|
 | `test_measure.py` | 50 |
 | `test_env.py` | 25 |
-| `test_sizing_tools.py` | 24 |
+| `test_sizing_tools.py` | 27 |
 | `test_agent.py` | 11 |
 | `test_wrapper.py` | 5 |
 | `test_harness_files.py` | 5 |
@@ -460,5 +503,3 @@ A disciplined test run afterwards (Claude Code following only the prompt files, 
 | `test_harness_vs_rl.py` | 4 |
 | `test_reference_rewards.py` | 1 |
 | `test_mcp_server.py` | 1 |
-| `test_tutor_tools.py` | 19 |
-| `test_tutor_mcp_server.py` | 1 |
