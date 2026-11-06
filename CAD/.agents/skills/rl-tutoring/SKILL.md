@@ -16,6 +16,9 @@ description: How the course's RL tools work (simulate, warmup around the best de
 
   All parameters move at once, so every draw shifts the mirror balance a little. **Hand over a balanced design that
   passes all hard specs with some margin**; otherwise the local search spends its simulations repairing it.
+- **Cc is the largest area lever** (≈ 333 µm²/pF), and the noise moves it only ≈ ±0.5 pF per draw. The equations
+  demand Cc ≈ gm1/(2π·100 MHz), usually 0.5–1 pF. If Cc is above ≈ 1 pF, move it there yourself in one step, and
+  re-tune with it: Rc ≈ (1 + CL/Cc)/gm6 (several kΩ) for the zero, and I_tail ≥ 30 V/µs · Cc for the slew rate.
 - **Episodes** last 10 steps. Every reset is a uniformly random design: one simulation, usually far worse; it moves
   the centre only if it's better.
 - **`train(n)`:** TD3 learns from every transition (one update per step). It needs ≥ 100 transitions (batch 100), so
