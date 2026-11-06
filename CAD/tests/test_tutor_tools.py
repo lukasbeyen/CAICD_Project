@@ -1,14 +1,15 @@
-"""Tests for tutor_tools.py (milestone 4, version 3): the tutor's setup_rl (nominal, search space, warm-up) and run_rl.
+"""Tests for tutor_tools.py (milestone 4): setup_rl (nominal, search space, warm-up), run_rl, refine, the design log.
 
 No ngspice: both envs get the fake simulator of test_env.py. Run from CAD/.
 """
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 import circuit_env
 from tests.test_env import FakeEngine
-from tutor_tools import MAX_WARMUP, TutorExperiment
+from tutor_tools import MAX_LOG_CHARS, MAX_WARMUP, TutorExperiment
 
 
 @pytest.fixture
@@ -41,6 +42,18 @@ def plan(experiment, k=2):
 
 def history(experiment):
     return pd.read_csv(experiment.history_path)
+
+
+# ---------- designs <-> actions ----------
+
+def test_every_grid_value_maps_to_an_action_and_back(make_experiment):
+    # to_action is the exact inverse of action_refine on the full YAML grid: the tutor's designs are valid TD3 actions
+    experiment = make_experiment()
+    base = experiment.env.action_refine(np.full(experiment.env.n_actions, 0.3))
+    for name, (min_val, max_val, step) in experiment.env.dict_params.items():
+        for value in np.arange(min_val, max_val, step):
+            design = experiment._validate_parameters(dict(base, **{name: float(value)}))
+            assert experiment.env.action_refine(experiment.to_action(design)) == design, (name, value)
 
 
 # ---------- setup_rl ----------
@@ -76,6 +89,14 @@ def test_setup_simulates_the_nominal_and_the_warmup_and_teaches_the_rl(make_expe
         assert set(row['delta_pct']) == {'gain', 'ugbw', 'phm', 'slewRate', 'current', 'area'}
     rows = history(experiment)
     assert list(rows.reason[1:]) == [item['purpose'] for item in warmup]  # every warm-up design keeps its purpose
+    # every design is one TD3 transition: from the nominal's state, the action that gives back exactly this design
+    nominal_state = experiment.state_of(experiment.designs[1])
+    for i in range(experiment.replay.size):
+        stored = experiment.designs[i + 1]
+        assert experiment.env.action_refine(experiment.replay.action[i]) == stored['parameters']
+        assert experiment.replay.reward[i, 0] == pytest.approx(stored['reward'])
+        assert np.allclose(experiment.replay.next_state[i], experiment.state_of(stored))
+        assert np.allclose(experiment.replay.state[i], nominal_state)
 
 
 @pytest.mark.parametrize('broken', ['nominal outside', 'off grid', 'unknown', 'outside space', 'fixed parameter', 'too many'])
@@ -111,6 +132,7 @@ def test_setup_runs_once_and_a_failed_nominal_restores_the_grid(make_experiment)
     with pytest.raises(RuntimeError):
         failing.setup_rl(*plan(failing))
     assert failing.env.dict_params == failing.full_grid and failing.nominal_call is None
+    assert failing.replay.size == 0 and failing.designs == {}  # a failed simulation adds no transition
 
 
 # ---------- run_rl ----------
@@ -154,6 +176,38 @@ def test_run_rl_is_n_simulations_inside_the_space(make_experiment):
     # only free parameters can sit at a range edge, and only at one of their bounds
     for name, side in report['best_at_range_edge'].items():
         assert name in space and best['parameters'][name] == pytest.approx(space[name][0 if side == 'low' else 1])
+
+
+def test_an_rl_step_is_one_simulation_one_transition_one_update(make_experiment):
+    # 9 tutor designs in the buffer (far fewer than batch_size 100): TD3 still updates from the first RL step
+    experiment = make_experiment()
+    nominal, space, warmup = plan(experiment)
+    experiment.setup_rl(nominal, space, warmup)
+    best_state = experiment.state_of(experiment._best())
+    experiment.run_rl(25, reason='burst')
+    assert experiment.simulator_calls == 34 and experiment.replay.size == 34
+    assert experiment.updates == 25 and experiment.agent.total_it == 25
+    assert np.allclose(experiment.replay.state[9], best_state)  # the first episode starts at the best design
+    rows = history(experiment)
+    assert list(rows.source) == ['simulate'] * 9 + ['rl'] * 25  # no reset and no random warm-up simulations
+
+
+def test_the_warm_start_pulls_the_actor_to_the_best_design_only_when_it_changed(make_experiment):
+    experiment = make_experiment()
+    nominal, space, warmup = plan(experiment)
+    experiment.setup_rl(nominal, space, warmup)
+    best = experiment._best()
+    state = torch.as_tensor(experiment.state_of(best)).reshape(1, -1)
+    target = torch.as_tensor(experiment.to_action(best['parameters']))
+    with torch.no_grad():
+        before = (experiment.agent.actor(state)[0] - target).abs().max().item()
+    assert experiment._warm_start(best) is True
+    with torch.no_grad():
+        after = (experiment.agent.actor(state)[0] - target).abs().max().item()
+    assert after < 0.25 * before
+    assert experiment._warm_start(best) is False  # same best: no second warm start
+    # the target actor is a copy of the warm-started actor
+    assert all(torch.equal(a, b) for a, b in zip(experiment.agent.actor.parameters(), experiment.agent.actor_target.parameters()))
 
 
 # ---------- refine: the educated improvement after the RL run ----------
@@ -227,3 +281,18 @@ def test_no_sequence_of_calls_goes_over_199_simulations(make_experiment):
     for call in [lambda: experiment.run_rl(1), lambda: experiment.refine([{'changes': {'mn1': nominal['mn1']}, 'purpose': 'x'}])]:
         with pytest.raises(ValueError, match='0 simulations left'):
             call()
+
+
+# ---------- the design log ----------
+
+def test_log_entries_are_numbered_and_bounded(make_experiment):
+    experiment = make_experiment()
+    assert experiment.log_entry('tutor', 'the setup') == {'entry': 1}
+    assert experiment.log_entry('reviewer', 'final') == {'entry': 2}
+    text = open(experiment.log_path).read()
+    assert text.count('## Session') == 1
+    assert '### 1. tutor (simulations so far: 0)' in text and '### 2. reviewer' in text
+    with pytest.raises(ValueError, match='at most'):
+        experiment.log_entry('tutor', 'x' * (MAX_LOG_CHARS + 1))
+    with pytest.raises(ValueError):
+        experiment.log_entry('', 'no agent')
