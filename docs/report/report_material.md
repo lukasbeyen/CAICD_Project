@@ -332,10 +332,40 @@ Pareto alternative: mn3 3, mn4 8, mn5 12 → 830.5 µm², 222.6 µA, PM 61.1°, 
 - The subagents' MCP tool limits are set in their prompts and the orchestrator's routing, not in an `agy`
   configuration. Whether `agy` can enforce them per agent was not tested.
 
+### Version 2: a token-lean harness where the LLM's designs warm-start the RL (branch `feat/m4-hybrid`)
+**Why:** v1 cost ≈ 244k input tokens per session (turn model). The orchestrator alone took ≈ 100k, because it wrote
+every log entry itself. And the LLM and the RL never met.
+
+**What changed:**
+- **The backend** (`hybrid_tools.py`, `HybridExperiment` on top of the unchanged `SizingExperiment`):
+  - **every LLM simulation becomes a TD3 transition**, via the exact inverse of `action_refine`;
+  - the LLM can give a design **as changes** to an earlier one;
+  - `rl_explore(n)` runs **short TD3 bursts** (~30 simulations): the actor is warm-started on the current best design
+    (supervised, 0 simulations), every episode starts at the best design, one TD3 update per step, no random warm-up
+    (the buffer samples with replacement, so batch 100 works from the start);
+  - `log_entry` lets the agents write the log through the server.
+- **The harness:**
+  - 3 agents (designer, rl-explorer, reviewer) + a thin orchestrator;
+  - a fixed alternating pipeline (designer → [RL burst → designer explains RL's change + 2–4 sims] × n → reviewer)
+    within **100–200 simulations**;
+  - `AGENTS.md` 2.3 kB (v1 6.3 kB); tool descriptions 1.5 kB (v1 2.5 kB); agent returns ≤ 80 words.
+
+**Test run** (Claude Code playing the agents; `CAD/harness/sessions/2026-11-06_claude-code-hybrid/`):
+- **Tokens:** ≈ 126k input (−48 % vs v1).
+- **Results:** all specs met at **sim 2**, final **FoM 0.677** after 97 simulations (7 by the designer, 90 RL).
+- **The RL bursts found no improvement.** A diagnostic shows why:
+  - the template's exploration noise (σ 0.1 on all 20 parameters at once) breaks the mirror balance (3 % of RL designs
+    feasible; 20 % at σ 0.02);
+  - the actor drifts from the warm-started design while the critic is still untrained;
+  - the converged design sits on the PM boundary (+0.3°).
+- **Honest reading for the report:** the token saving works. The LLM did the design. The RL, as a local explorer
+  around a converged, constraint-bound design, adds nothing with the course's TD3 settings. It found feasible
+  alternatives, but no better ones.
+
 ---
 
 ## Tests overall
-`cd CAD && python -m pytest -q`: **129 passed**:
+`cd CAD && python -m pytest -q`: **145 passed** (branch `feat/m4-hybrid`):
 
 | file | tests |
 |---|---|
@@ -349,3 +379,5 @@ Pareto alternative: mn3 3, mn4 8, mn5 12 → 830.5 µm², 222.6 µA, PM 61.1°, 
 | `test_harness_vs_rl.py` | 4 |
 | `test_reference_rewards.py` | 1 |
 | `test_mcp_server.py` | 1 |
+| `test_hybrid_tools.py` | 14 |
+| `test_hybrid_mcp_server.py` | 1 |
