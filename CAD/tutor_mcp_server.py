@@ -53,7 +53,8 @@ def create_server(experiment):
 
     @server.tool()
     def refine(designs: list[WarmupDesign], reason: str = "") -> dict[str, Any]:
-        """After the RL run: 1-5 reasoned designs (changes vs the current best). Returns their sensitivity rows."""
+        """After the RL run, at most 2 rounds: 1-5 reasoned designs (changes vs the current best). Returns their
+        sensitivity rows and the new best's margins."""
         return call("refine", designs=[item.model_dump() for item in designs], reason=reason)
 
     @server.tool()

@@ -19,7 +19,7 @@ then the LLM makes one educated improvement and the session ends.
 ## Tools (MCP server `cad`)
 - `setup_rl`: once; the nominal, the search space and the warm-up. Returns a sensitivity table.
 - `run_rl`: TD3 alone, n simulations.
-- `refine`: after the RL run; 1–5 reasoned designs.
+- `refine`: after the RL run; 2 rounds of 1–5 reasoned designs.
 - `get_status`: the best designs; no simulation.
 - `log_entry`: your step in the log, ≤ 1200 characters.
 

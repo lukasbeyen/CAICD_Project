@@ -189,6 +189,29 @@ def test_refine_limits_and_invalid_designs(make_experiment):
     assert experiment.simulator_calls == calls
 
 
+def test_refine_runs_two_rounds_the_second_from_the_new_best(make_experiment):
+    experiment = make_experiment()
+    nominal, space, warmup = plan(experiment)
+    experiment.setup_rl(nominal, space, warmup)
+    experiment.run_rl(20)
+    with pytest.raises(ValueError):
+        experiment.refine([])                                 # a refused call is not a round
+    first = experiment.refine([{'changes': {'mn1': space['mn1'][0]}, 'purpose': 'probe'}])
+    assert first['rounds_left'] == 1
+    best = experiment._best()                                 # the best after round 1
+    assert first['best_after']['reward'] == round(best['reward'], 4)
+    assert set(first['best_after']['margin_pct']) == set(experiment.env.hard_constraints)
+    second = experiment.refine([{'changes': {'cap': space['cap'][1]}, 'purpose': 'combine'}])
+    assert second['rounds_left'] == 0
+    assert second['best_before']['reward'] == first['best_after']['reward']  # round 2 starts at the new best
+    stored = experiment.designs[experiment.simulator_calls]['parameters']
+    assert {k: v for k, v in stored.items() if k != 'cap'} == {k: v for k, v in best['parameters'].items() if k != 'cap'}
+    calls = experiment.simulator_calls
+    with pytest.raises(ValueError, match='at most 2 times'):
+        experiment.refine([{'changes': {'mn1': nominal['mn1']}, 'purpose': 'x'}])
+    assert experiment.simulator_calls == calls
+
+
 # ---------- the budget: strictly fewer than 200 simulations ----------
 
 def test_no_sequence_of_calls_goes_over_199_simulations(make_experiment):

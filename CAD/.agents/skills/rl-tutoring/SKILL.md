@@ -27,12 +27,12 @@ description: How to set up the TD3 sizer's job - the search space (which paramet
   - 2–3 coupled moves, e.g. both mirror currents up/down with the balance S_p3/S_p1 = 2·S5/S4 kept.
   
   Every design is real data for the RL, and the table shows you the sensitivities.
-- **After the RL run** (`refine`), use its report:
+- **After the RL run** (`refine`, 2 rounds: probe, then combine), use its report:
   - `best_margin_pct`: the RL stops where a spec just passes. A spec with < 3 % margin is binding: a current or area
     cut that costs it fails. First buy it headroom with another spec's margin (e.g. PM → Cc ↓ for UGBW), or step
     only on parameters that don't move it;
   - the warm-up's sensitivities hold at the nominal, not at the best: mix single steps with coupled ones;
   - `best_at_range_edge`: `refine` can't go further that way;
   - a coupled move that keeps the mirror balance (mn4, mn5 and mp3 together), which the RL's noise rarely finds.
-- **Budget** (strictly < 200, enforced): nominal + warm-up ≈ 10–20, `run_rl` 60–100, `refine` 2–5: ≈ 80–120 in
-  total.
+- **Budget** (strictly < 200, enforced): nominal + warm-up ≈ 10–20, `run_rl` 60–100, `refine` 2 rounds of 2–5:
+  ≈ 85–130 in total.

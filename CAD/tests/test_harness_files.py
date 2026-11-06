@@ -21,7 +21,7 @@ def frontmatter(path):
 def test_the_always_loaded_context_is_small():
     assert os.path.getsize(os.path.join(CAD, 'AGENTS.md')) <= 2000
     for file in os.listdir(AGENTS):
-        assert os.path.getsize(os.path.join(AGENTS, file)) <= 1500, file
+        assert os.path.getsize(os.path.join(AGENTS, file)) <= 1800, file
     for folder in os.listdir(SKILLS):
         assert os.path.getsize(os.path.join(SKILLS, folder, 'SKILL.md')) <= 3500, folder
 

@@ -20,6 +20,7 @@ from sizing_tools import check_count, compact
 MAX_TOTAL_SIMS = 199  # the whole session: strictly fewer than 200 simulations
 MAX_WARMUP = 20       # warm-up designs per setup_rl
 MAX_REFINE = 5        # designs per refine
+MAX_REFINE_ROUNDS = 2  # refine calls per session: probe at the best, then combine what helped
 SPECS = ("gain", "ugbw", "phm", "slewRate", "current", "area")  # the specs in the sensitivity tables
 
 
@@ -29,6 +30,7 @@ class TutorExperiment(HybridExperiment):
         super().__init__(*args, **kwargs)
         self.full_grid = dict(self.env.dict_params)  # the YAML grid; self.env.dict_params becomes the RL's grid
         self.nominal_call = None                      # the simulation number of the nominal design (after setup_rl)
+        self.refine_rounds = 0                        # refine calls so far
 
     # ---------- the tutor's calls ----------
 
@@ -57,19 +59,27 @@ class TutorExperiment(HybridExperiment):
         }
 
     def refine(self, designs, reason=""):
-        """After the RL run: <= 5 reasoned designs relative to the current best (they are also RL experience)."""
+        """After the RL run: <= 5 reasoned designs relative to the current best (they are also RL experience).
+        At most 2 rounds: the second one starts from the best after the first."""
         if self.nominal_call is None:
             raise ValueError("call setup_rl first.")
+        if self.refine_rounds >= MAX_REFINE_ROUNDS:
+            raise ValueError(f"refine runs at most {MAX_REFINE_ROUNDS} times per session.")
         if not isinstance(designs, list) or not 1 <= len(designs) <= MAX_REFINE:
             raise ValueError(f"designs must be a list of 1 to {MAX_REFINE} designs.")
         self._budget(len(designs))
         best = self._best()
         base_call = self._call_of(best)  # all designs are relative to the best at the start of the call
         self._check_designs(best["parameters"], designs, self.env.dict_params)
+        self.refine_rounds += 1  # only a call that passed all checks counts as a round
         best_short = compact(best, units=False)
+        table = self._simulate_table(designs, base_call, best["specs"])
+        best_after = self._best()
         return {
             "best_before": {"reward": best_short["reward"], "specs": best_short["specs"]},
-            "refined": self._simulate_table(designs, base_call, best["specs"]),
+            "refined": table,
+            "best_after": {"reward": round(best_after["reward"], 4), "margin_pct": self._margins(best_after["specs"])},
+            "rounds_left": MAX_REFINE_ROUNDS - self.refine_rounds,
             "simulator_calls": self.simulator_calls,
         }
 
