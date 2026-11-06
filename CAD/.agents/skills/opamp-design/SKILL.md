@@ -38,7 +38,7 @@ included.
 - **Noise** (integrated output): it falls with gm1 relative to the load's gm and with a larger W·L of the pair and the
   load; it rises with more gain or bandwidth.
 - **Balance:** S_p3/S_p1 = 2·S5/S4 puts the output at its DC level; a strong imbalance collapses the gain.
-- **Calibrate early:** in 45 nm these are first estimates (the real currents and slew rate can differ ~2×); measure
+- **Calibrate early:** in 45 nm these are first estimates (short-channel effects make the real values differ); measure
   the error on the first simulations and say so in the `reason`.
 
 ## Knobs
