@@ -332,8 +332,50 @@ Pareto alternative: mn3 3, mn4 8, mn5 12 → 830.5 µm², 222.6 µA, PM 61.1°, 
 - The subagents' MCP tool limits are set in their prompts and the orchestrator's routing, not in an `agy`
   configuration. Whether `agy` can enforce them per agent was not tested.
 
+### Overview of all harness runs (which are usable for the report)
+Every run used real ngspice (TT corner, 27 °C). They differ in who played the agents and whether tool calls were
+replayed. The records are in `CAD/harness/sessions/`.
+
+**A. Real agy sessions: usable as harness results.** The tokens are agy's own counts (from its transcripts).
+
+| run | version (branch) | sims | FoM | wall time | tokens: input + cached + output | notes |
+|---|---|---|---|---|---|---|
+| `2026-11-05_gemini-3.8-flash` | v1, `einstein_LLM` | 16 | **0.684** | 10.5 + 5.2 min | **806k + 1.39M + 117k** (95 calls) | the RL tools were available, the LLM chose not to use them; two parts (agy restart) |
+| `2026-11-06_agy-claude-sonnet` | v3.2, `feat/m4-tutor` | 101 | none feasible (−0.68) | 2.7 min | 58.8k + 207.5k + 13.2k | a failure example: the tutor fenced the RL in |
+| `2026-11-06_agy-claude-sonnet-v4` | v4, `feat/m4-template` | 191 | 0.490 | 5.8 min | 85.2k + 628.7k + 17.0k | the current never budgeted (452 µA) |
+
+**B. Claude Code playing the agents: real ngspice, not agy.** Development and ablation evidence only:
+- the tokens are turn-model estimates;
+- the times include Claude Code's reasoning;
+- the player had seen earlier sessions.
+
+| run | version | sims | FoM |
+|---|---|---|---|
+| `claude-code-test` | v1 | 560 | 0.660 |
+| `claude-code-hybrid` | v2 | 97 | 0.677 |
+| `claude-code-tutor` | v3 | 146 | 0.650 |
+| `claude-code-tutor2` | v3.1 | 199 | 0.686 |
+| `claude-code-fresh` | v3.2 | 101 | 0.669 |
+| `claude-code-template` | v4 | 189 | 0.678 |
+
+**C. Experiments: replayed tool calls, one seed, with the actor warm start** (commit `5c8824f`, reverted
+afterwards):
+
+| run | sims | FoM | time | note |
+|---|---|---|---|---|
+| `claude-code-template-warmstart` (A/B vs v4) | 189 | 0.678 | | |
+| `experiment-train200` | 333 | 0.646 | 1.1 min | |
+| `experiment-train2000` | 2313 | **0.699** | 8.8 min | beats the warm-up from training step 1515 (at 7.1 min) |
+
+**D. Milestone 3 TD3 runs** (`runs/B_pilr_w_s123456 / s1 / s2`): 5000 sims each, best FoM 0.702 / 0.660 / 0.662.
+
+**Time rather than simulations:**
+- A simulation costs ≈ 0.2 s here. A harness's wall time is dominated by the LLM's reasoning (v1: 6.3 min of
+  analysis before its first simulation, ~15.7 min in total).
+- The RL's wall time is dominated by simulations: the warm-started hybrid reached 0.699 after 7.1 min.
+
 ### Version 2: a token-lean harness where the LLM's designs warm-start the RL (branch `feat/m4-hybrid`)
-**Why:** v1 cost ≈ 244k input tokens per session (turn model). The orchestrator alone took ≈ 100k, because it wrote
+**Why:** v1 cost a lot of tokens. agy's own counts for the session: 95 model calls, 806k input + 1.39M cached input + 117k output (the turn-model estimate had said ≈ 244k). The orchestrator alone took ≈ 100k, because it wrote
 every log entry itself. And the LLM and the RL never met.
 
 **What changed:**
@@ -380,13 +422,13 @@ set up the RL's job, and the RL optimizes.
 - **The harness:** 2 agents (tutor, reviewer) + a 2-step orchestrator; `AGENTS.md` 1.5 kB; 4 tools (1.7 kB).
 
 **Test run** (Claude Code playing the agents; `CAD/harness/sessions/2026-11-06_claude-code-tutor/`):
-- **5 tool calls, 13 model turns, ≈ 30k input tokens** (v1 ≈ 244k, v2 ≈ 126k).
+- **5 tool calls, 13 model turns, ≈ 30k input tokens** (v1 ≈ 244k in the same turn model, v2 ≈ 126k).
 - **From a failing nominal** (FoM −0.17), the tutor's balanced warm-up designs meet all specs (0.606).
 - **The RL improves alone** to **0.650** in 130 simulations, and 88 of 118 distinct designs meet all specs.
 
 | | tokens (input) | simulations | best FoM | found by |
 |---|---|---|---|---|
-| v1 (LLM designs) | ≈ 244k | 16 | 0.684 | the LLM |
+| v1 (LLM designs) | ≈ 244k (turn model; agy measured 806k + 1.39M cached) | 16 | 0.684 | the LLM |
 | v2 (LLM + RL bursts) | ≈ 126k | 97 | 0.677 | the LLM |
 | v3 (LLM tutors the RL) | ≈ 30k | 146 | 0.650 | the RL |
 | v3.1 (+ `refine` between two RL runs) | ≈ 46k | 199 | 0.686 | the LLM's refine, after the RL |
