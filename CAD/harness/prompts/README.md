@@ -3,6 +3,7 @@
 | file | what it is |
 |---|---|
 | `rl_first_evaluated.txt` | **the exact prompt of the evaluation runs** on the unseen seeds 3, 4, 5 (`../sessions/2026-11-06_eval-rl-first-seeds345/`), copied byte for byte from the sessions' transcripts (identical in all three) |
+| `llm_first_big_rl_evaluated.txt` | the exact prompt of the comparison flow, LLM first then one big RL, on the same seeds (`../sessions/2026-11-06_eval-llm-first-big-rl-seeds345/`) |
 | `rl_first_final.txt` | **the final version for the report**: the same prompt without the polish step `warmup(50)`, and the budget line 2200 → 2100 |
 
 **Why the polish was removed:**
