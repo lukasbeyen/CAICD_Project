@@ -39,10 +39,10 @@ def readParser():
     parser.add_argument('--T', type=int, default=10_000, metavar='N',
                         help='total training steps (default: 10_000)')
     
-    parser.add_argument('--pi_lr', type=float, default="0.001", metavar='G',
+    parser.add_argument('--pi_lr', type=float, default="3e-4", metavar='G',
                         help='learning rate')
     
-    parser.add_argument('--q_lr', type=float, default="0.001", metavar='G',
+    parser.add_argument('--q_lr', type=float, default="1e-3", metavar='G',
                         help='learning rate')
 
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
@@ -59,7 +59,7 @@ def readParser():
 
 def train(args, env, agent, env_pool):
     total_steps = warmup_exploration(args, env, env_pool, agent)
-    while total_steps < args.T:
+    while total_steps < args.T and env.counter < 5000:
         obs = env.reset()
         done = False
         while not done:
@@ -90,8 +90,8 @@ def warmup_exploration(args, env, env_pool, agent):
 
 
 def train_policy(args, env_pool, agent, total_steps):
-    state, action, reward, next_state, done = env_pool.sample(args.batch_size)
-    batch = (state, action, reward, next_state, done)
+    state, action, next_state, reward, not_done = env_pool.sample(args.batch_size)
+    batch = (state, action, next_state, reward, not_done)
     agent.update_parameters(memory_batch=batch, update=total_steps)
 
 
