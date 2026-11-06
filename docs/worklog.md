@@ -2439,3 +2439,27 @@ differs).
 - Let the LLM step aim higher: e.g. hand over a design that meets all specs with margin, using up to 5 sims
   iteratively.
 - Compare with the LLM-first runs on the same seeds.
+
+### 2026-11-06 — 4.v4.1: three seeds, round 2 (the margin rule, the clear stop rule, RL 1 800 steps)
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-3seeds-margin/` (commit in this step).
+
+**Result:**
+
+| seed | final FoM | design |
+|---|---|---|
+| 123456 | 0.671 | 288 µA, 580 µm² |
+| 1 | 0.337 | 257 µA, 1443 µm² |
+| 2 | 0.610 | 310 µA, 621 µm² |
+| **mean** | **0.539 ± 0.178** | round 1: 0.489 ± 0.127 |
+
+The stop rule was applied correctly in all three. Train 2 with the warm start helped in all three (+0.03 to
++0.07).
+
+**Interpretation:**
+- The seeds are separated by Cc, which dominates the area: 0.6–0.7 pF in the good runs, 2.6 pF in seed 1.
+- The margin rule made the LLM step cautious (small Cc steps), so seed 1 never reached the sub-pF region that the
+  equations demand.
+
+**Next idea (prompt only):** in the LLM step, move Cc boldly into the region the equations demand
+(Cc ≈ gm1/(2π·100 MHz), usually 0.5–1 pF), re-tuning Rc and the currents. Keep the 10 % margin rule for the other
+moves. The `rl-tutoring` skill lost the sub-pF sentence in the v4 rewrite.
