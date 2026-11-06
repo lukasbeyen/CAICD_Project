@@ -2661,3 +2661,20 @@ session (0.490: `tutor.md`'s < 200 flow, `train(60)` without the warm start, a f
 - agy's LLM step was as good as Claude Code's on the identical state (0.699 vs 0.691).
 - The final flow works in agy. Without subagents it costs half the calls of the old agy session, but the full run
   still exceeds this quota.
+
+### 2026-11-06 — 4.v4.1: the agy seed-3 run completed by a replay
+**What:** agy's exact MCP calls from its transcript were replayed in the seed-3 lane with seed 3, then the missing
+second `train(800)` ran. The first `warmup` (rejected by the argument check: `n` instead of `n_steps`) was left
+out, since it never reached the experiment.
+
+**Verified:** the first 1214 simulations are identical to agy's run (maximum absolute difference 0.0; the same
+sources and failed flags).
+
+**Result:** the second training reached **0.7054** at simulation 1465 (215 µA, 775 µm², UGBW +2.3 %, PM +2.0 %):
+- the highest harness result (Claude Code on seed 3: 0.702);
+- 2094 simulations in total.
+
+**Limit:** agy's stop decision and reviewer summary aren't reproducible; with ≈ 2 % margins the stop condition
+applies.
+
+Record: `CAD/harness/sessions/2026-11-06_agy-rl-first-seed3/` (commit `36a8fa6`).

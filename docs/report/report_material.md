@@ -386,6 +386,12 @@ prompt `rl_first_final_agy.txt` = the final prompt + "no subagents"):
   - Claude Code's 2 reached 0.691 (final 0.702 after the second training).
 - **Cost:** 1214 simulations, 6.9 min, 15 model calls: 50.1k input + 293.7k cached + 7.0k output (agy's counts).
   The earlier agy session with subagents had 32 calls and 85.2k + 628.7k + 17.0k.
+- **Completed by a deterministic replay** (no LLM needed for the missing phase): agy's exact MCP calls, taken from
+  its transcript, were replayed with the same seed. The first 1214 simulations are identical, maximum difference
+  0.0. Then the missing second `train(800)` ran.
+  - It reaches **FoM 0.7054** (215 µA, 775 µm², UGBW +2.3 %, PM +2.0 %), the highest of all harness runs.
+  - agy's final stop-or-refine decision and its reviewer summary can't be replayed. With both binding specs at
+    ≈ 2 % margin, the prompt's stop condition applies.
 
 **The comparison flow on the same unseen seeds: LLM first, then one big RL.** Prompt
 `CAD/harness/prompts/llm_first_big_rl_evaluated.txt`, records
