@@ -2332,3 +2332,19 @@ agy v4 session had 32 calls and 85k + 629k + 17k.
 - A better first LLM step ended lower than my weaker one. It handed over a design with UGBW binding (+2.9 %), while
   mine had large margins (UGBW +57 %, PM +38 %) and gave the warm-up room to climb.
 - One run each: suggestive, not proven. If it holds, the LLM step should hand over margin, not only reward.
+
+### 2026-11-06 — 4.v4.1 again: the actor warm start re-applied (Brent)
+**Goal:** measure the warm start's influence on the second RL phase of the RL-first flow; Brent also raises the
+training to 1000 steps per phase in his next fresh Claude Code run.
+
+**What changed** (branch `feat/m4-template`, commit `09ac3b5` = `git revert 4e56f63`, tests run before
+committing): `sizing_tools.py`, `tests/test_sizing_tools.py` and the `rl-tutoring` skill are identical to
+`5c8824f` again. 135 tests pass.
+
+**How it acts in the RL-first flow:**
+- Phase 1's `train` stays plain TD3, because there is no LLM `simulate` design yet.
+- Phase 2's `train` first pulls the actor to the best design: after the LLM's step and the warm-up around it.
+
+**Controlled replay** (running): the fresh session's exact calls (`b62fd8b`) with the warm start. The first 1095
+simulations are identical, so only phase 2's `train(800)` differs. That isolates the warm start's effect. Brent's
+run with 1000 steps changes phase 1 too, so it can't isolate it by itself.
