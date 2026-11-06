@@ -371,7 +371,7 @@ every log entry itself. And the LLM and the RL never met.
 |---|---|
 | `test_measure.py` | 50 |
 | `test_env.py` | 25 |
-| `test_sizing_tools.py` | 23 |
+| `test_sizing_tools.py` | 24 |
 | `test_agent.py` | 11 |
 | `test_wrapper.py` | 5 |
 | `test_harness_files.py` | 5 |
