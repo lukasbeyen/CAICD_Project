@@ -168,7 +168,9 @@ With the start values the agent degrades in the second half. A slower actor and 
 | Lukas's values (batch 64, w 200, actor/critic lr 1e-3), 4 seeds | 0.669 / 0.606 / 0.687 / 0.665 | 0.657 ± 0.035 |
 | SAC baseline's values (batch 100, w 100, lr 3e-4/3e-4), 2 seeds | 0.300 / 0.368 | 0.334 |
 
-**Final values:** σ 0.1, batch 128, **w 1000**, **actor lr 1e-4**, critic lr 1e-3 (γ 0.99, τ 0.005, delay 2). Reasons:
+**Final values:** σ 0.1, batch 128, **w 1000**, **actor lr 1e-4**, critic lr 1e-3 (γ 0.99, τ 0.005, delay 2).
+These were given on the command line (`python td3_runner.py --batch_size 128 --w 1000 --pi_lr 1e-4 --seed <s>`);
+the runner's own defaults are Lukas's (σ 0.1, batch 64, w 200, actor lr 3e-4, critic lr 1e-3). Reasons:
 - the highest mean best FoM, the smallest spread and the best worst seed;
 - the least degradation late in the run;
 - a slower actor relative to the critic fits TD3's own argument for delayed policy updates;

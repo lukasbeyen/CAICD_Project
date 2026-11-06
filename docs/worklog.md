@@ -9,7 +9,8 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 **Where we are (Thu 5 Nov, evening):** all 4 milestones implemented and tested (129 tests pass); the report is next.
 - Milestones 1 and 2 on `main` (PR #8).
 - Milestone 3 on `feat/td3` (not pushed).
-- Milestone 4 on `feat/m4-harness` (from `feat/td3`, not pushed). **Current branch: `feat/m4-harness`.**
+- Milestone 4 on `feat/m4-harness` (from `feat/td3`). Both merged with `main` (Lukas's M3) on 6 Nov and pushed as
+  **`einstein_LLM`**. **Current branch: `feat/m4-harness`.**
 - Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
 - Deadline: Sun 8 Nov 2026, 23:59.
 
@@ -33,7 +34,8 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 - ✅ 3.3 runner fixes (5000-sim stop, seeding, run folder, `finalize()`) + `test_runner.py` (4)
 - ✅ 3.4 first full run (start values)
 - ✅ 3.5 tuning: stages A (9 runs), B + B2 (3 seeds), C (SAC's values); Lukas's values on 4 seeds
-- ✅ final values (Brent): σ 0.1, batch 128, w 1000, actor lr 1e-4, critic lr 1e-3 → the runner defaults
+- ✅ final values (Brent): σ 0.1, batch 128, w 1000, actor lr 1e-4, critic lr 1e-3, given as options; since the merge of
+  6 Nov the runner defaults are Lukas's (batch 64, w 200, actor lr 3e-4, critic lr 1e-3)
 - ✅ 3.6 final results: 3 seeds (0.675 ± 0.024, best 0.702), `final_max_fom.png`, `final_pareto.png`, `Solutions/`
   (9 Pareto netlists + CSV, **not committed yet**); SAC baseline (Brent, student server, 1 seed): 0.662
 - ⬜ 3.R report section (material §3) · ⬜ optional: SAC on 2 more seeds
@@ -1542,3 +1544,39 @@ writes its routing decision in the same log entry as the subagent's summary (abo
 
 **Note for the report:** the agy session of 5 Nov ran with the previous version (300-word summaries, Cc called the
 largest area item).
+
+
+### 2026-11-06 — merge of `main` (Lukas's milestone 3, `07d2e87` + `ae39174`); pushed as `einstein_LLM`
+**Goal:** Brent: start from Lukas's version on `main` and add only our necessary changes.
+
+**What Lukas pushed (`ae39174` "milestone 3 k version"):**
+- `td3_runner.py`: actor lr 3e-4, critic lr 1e-3 (batch 64, w 200 unchanged); a hard-coded `env.counter < 5000` in
+  the outer training loop; the correct variable names in `train_policy`;
+- `circuit_env.py`: `self.episode += 1` removed from `reset()`;
+- new `analysis/best_design.py`.
+
+**How it was merged (Brent's decisions):**
+1. Brent's uncommitted comments in `agent.py` stashed (`stash@{0}`, not needed).
+2. On `feat/td3`: `git merge origin/main` (`20e2b4b`):
+   - `agent.py` = Lukas's (algorithmically identical to ours; our 11 agent tests pass on it);
+   - `circuit_env.py` = Lukas's, the episode counter stays removed (Brent);
+   - `td3_runner.py` = **Lukas's file and his defaults**, plus our additions:
+     - `--max_sims` (default 5000), checked in all 4 loops, so exactly 5000 (his check gave 5005 and didn't cover
+       the warm-up);
+     - seeding of `env.np_random` and `env.action_space` (same seed = same run);
+     - the run folder with the YAML and `hyperparameters.json`;
+     - `env.finalize()` and saving the networks;
+     - the progress lines;
+   - his `train_policy` names kept.
+3. `feat/td3` merged into `feat/m4-harness` (`afae1ae`, no conflicts): **130 tests pass**.
+
+**Found and fixed on the way:** our runner's progress lines used `float('nan')` inside a single-quoted f-string, which
+is a SyntaxError before Python 3.12 (the student server has 3.9; the earlier `ast` check doesn't catch it). Now
+`best = max(..., default=float("nan"))` first; a scan of `CAD/` finds no other such f-string.
+
+**Consequences:**
+- `python td3_runner.py` without options now uses Lukas's defaults. Our final runs `B_pilr_w_*` need
+  `--batch_size 128 --w 1000 --pi_lr 1e-4` (report material updated).
+- The episode column of `designs.csv` is now 0 in every row (nothing reads it).
+
+**Pushed:** branch `einstein_LLM` = `feat/m4-harness` (milestones 3 + 4 on top of `main`).
