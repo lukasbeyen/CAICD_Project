@@ -1766,3 +1766,15 @@ step depends on its number of grid points in the range: 5 points ≈ 1 % (practi
   caught.
 - Real ngspice: the T0 plan with 8 warm-up designs → a 1.6 kB table; `run_rl(30)` → a 420 B report, 1 improvement
   (Rc 9.8 → 9.7 kΩ). All 156 tests pass.
+
+### 2026-11-06 13:05 — 4.T2: harness v3, the MCP server `tutor_mcp_server.py`
+- New `CAD/tutor_mcp_server.py`: the template server's structure, with 4 tools: `setup_rl(nominal, search_space,
+  warmup, reason)` (a warm-up item = a small pydantic model `WarmupDesign(changes, purpose)`), `run_rl(n_sims,
+  reason)`, `get_status(k = 3)`, `log_entry(agent, text)`.
+- There's no `simulate`: the tutor doesn't design step by step.
+- The descriptions and schemas are 1.7 kB together (`setup_rl` 968 B).
+- New `CAD/tests/test_tutor_mcp_server.py` (stdio):
+  - the 4 tools; < 2500 B;
+  - `get_status` answers;
+  - `run_rl` before setup → a readable error;
+  - an incomplete nominal → a readable error.
