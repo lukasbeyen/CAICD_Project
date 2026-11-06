@@ -1,30 +1,29 @@
-# Running the sizing harness (version 2: LLM + RL) with Antigravity CLI (`agy`)
+# Running the sizing harness (version 3: the LLM tutors the RL) with Antigravity CLI (`agy`)
+
+The LLM doesn't design step by step: the **tutor** sets up the RL's job in one call, and TD3 optimizes alone.
+- `setup_rl`: a nominal hand design, the RL's search space (the free parameters with ~11 grid points each, the rest
+  fixed) and a warm-up set with a purpose per design. Every design becomes TD3 experience, and a sensitivity table
+  comes back.
+- `run_rl`: TD3 in that space, in bursts that start at the current best design.
+- The **reviewer** then explains what the RL changed and checks the margins.
 
 The harness consists of:
-- `AGENTS.md`: the always-loaded context and the pipeline;
-- `.agents/agents/`: `designer`, `rl-explorer`, `reviewer`;
-- `.agents/skills/`: `opamp-design`, `hybrid-rl`;
-- `.agents/mcp_config.json`: the MCP server `cad` = `hybrid_mcp_server.py` over `hybrid_tools.py`, which builds on
-  `sizing_tools.py`;
-- `harness/design_log.md`: the memory, written by the agents through `log_entry`.
-
-The designer's designs become TD3 experience. Short RL bursts (`rl_explore`, ~30 simulations) search around the
-current best design, and the designer explains and builds on what they find. The total budget is 100–200 simulations.
+- `AGENTS.md`;
+- `.agents/agents/`: `tutor`, `reviewer`;
+- `.agents/skills/`: `opamp-design`, `rl-tutoring`;
+- `.agents/mcp_config.json` → `tutor_mcp_server.py` over `tutor_tools.py` → `hybrid_tools.py` → `sizing_tools.py`;
+- `harness/design_log.md`: the memory, written through `log_entry`.
 
 ## Once
 1. Install with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, then `agy --version`.
-2. The paths in `.agents/mcp_config.json` are for Brent's VM; adapt `command`, `args` and `cwd` on another machine.
-3. In `agy`: allow the `cad` tools with "always allow" (project scope), so a session doesn't stop on a permission
-   question.
+2. The paths in `.agents/mcp_config.json` are for Brent's VM; adapt `command`, `args` and `cwd` elsewhere.
+3. In `agy`: "always allow" (project scope) for the `cad` tools.
 
 ## A session
 ```bash
 cd CAD
-agy                     # interactive: paste harness/session_prompt.md
+agy                     # paste harness/session_prompt.md
 agy -p "$(cat harness/session_prompt.md)" --output-format stream-json > harness/sessions/session_$(date +%Y%m%d_%H%M).jsonl
 ```
-
-## What a session leaves behind
-- `harness/design_log.md`: the reasoning per step.
-- `runs/mcp_<time>/harness_history.csv`: every simulation (source `simulate` or `rl`, reason, specs, reward).
-- `runs/mcp_<time>/feasible_netlists/`: the designs that met all specs.
+It leaves behind: `harness/design_log.md`, `runs/mcp_<time>/harness_history.csv` (sources `simulate` = the tutor's
+designs, `rl`), and `runs/mcp_<time>/feasible_netlists/`.

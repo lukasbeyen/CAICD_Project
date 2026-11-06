@@ -1778,3 +1778,27 @@ step depends on its number of grid points in the range: 5 points ≈ 1 % (practi
   - `get_status` answers;
   - `run_rl` before setup → a readable error;
   - an incomplete nominal → a readable error.
+
+### 2026-11-06 13:10 — 4.T3: harness v3, the harness files from scratch
+**What changed:**
+- **Removed:** the v2 `AGENTS.md`, `designer`/`rl-explorer`/`reviewer`, the `hybrid-rl` skill. Kept the
+  `opamp-design` skill. The v2 server files stay as the record of v2.
+- **`CAD/AGENTS.md` (1.5 kB):**
+  - the goal: the LLM sets up the RL's job, TD3 optimizes; within 100–200 simulations;
+  - the specs; the FoM; the 4 tools;
+  - **the pipeline: the main agent calls `tutor`, then `reviewer`, nothing else**;
+  - the rules: a purpose per warm-up design, numbers from tools, one `log_entry` + ≤ 80 words per agent.
+- **`.agents/agents/tutor.md` (1.1 kB):** a nominal from the equations, a search space (~11 grid points per free
+  parameter, the rest fixed, and why), 10–20 warm-up designs with purposes, `setup_rl` once, read the table,
+  `run_rl` with the rest (100–150), one log entry.
+- **`.agents/agents/reviewer.md` (0.8 kB):** `get_status(5)` + the tutor's entry; the final design vs the nominal,
+  the margins, why the RL's changes work (from the tutor's sensitivities), Pareto, the cost.
+- **New skill `rl-tutoring` (1.7 kB):** what the RL does with the space and the warm-up; **the grid-point rule**
+  (5 points ≈ 1 % chance of a move per step, 11 ≈ 30 %, 21 ≈ 60 %); what to free (mn4, mn5, mp3, mn1, Cc, Rc) and
+  what to fix (all L, mn3, usually the W's), and why; a good warm-up; the budget split.
+- `.agents/mcp_config.json` → `tutor_mcp_server.py`; `harness/session_prompt.md` (2 lines), `harness/README.md`, a
+  fresh `harness/design_log.md`.
+- `tests/test_harness_files.py` for v3: the 2 agents, the 2 skills, the 4 tools, the size budgets (`AGENTS.md`
+  ≤ 2 kB, agents ≤ 1.5 kB, skills ≤ 3.5 kB), the config.
+
+**Fixed context:** 8.3 kB (v2 9.9 kB, v1 ≈ 22 kB). All 157 tests pass.
