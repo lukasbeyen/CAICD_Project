@@ -39,7 +39,8 @@ class HybridExperiment(SizingExperiment):
         for name, (min_val, max_val, step) in self.env.dict_params.items():
             n_steps = round((max_val - min_val) / step)
             k = round((params[name] - min_val) / step)
-            action.append(min((2 * k + 1) / (n_steps - 1) - 1, 1.0))
+            # a fixed parameter (1 grid point, e.g. in a tutor-narrowed space) maps every action to it: use 0
+            action.append(0.0 if n_steps == 1 else min((2 * k + 1) / (n_steps - 1) - 1, 1.0))
         return np.array(action, dtype=np.float32)
 
     def state_of(self, candidate):

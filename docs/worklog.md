@@ -1700,3 +1700,37 @@ Median RL reward −1.1 / −0.7 / −0.3.
   not better);
 - no actor updates during the first bursts, to avoid the drift (deviates from TD3's delayed updates);
 - or keep it, and report honestly that around a converged, constraint-bound design the RL adds nothing.
+
+### 2026-11-06 12:50 — 4.T0: harness v3 (the LLM as the RL's tutor): feasibility check
+**Goal:** Brent: v2 still uses too many tokens. The LLM shouldn't design everything itself (the RL's rival) but tutor
+the RL: give it a very good environment and warm-up. Plan: `~/.claude/plans/streamed-sauteeing-moonbeam.md` (v3).
+Branch `feat/m4-tutor` from `feat/m4-hybrid`. Brent's choices:
+- the tutor sets the search space and the warm-up;
+- one plan call;
+- 2 agents (tutor + reviewer) + a thin orchestrator.
+
+**Change:** `hybrid_tools.to_action` gives action 0 for a fixed parameter (1 grid point), which used to be a division
+by zero.
+
+**T0, Python only, no LLM:**
+- the nominal = v2's sim-3 design (FoM 0.622);
+- the RL grid narrowed: 6 free parameters with ~11 grid points (mn1, mp3, mn4, mn5 ±5 fingers; Cc 0.1–0.9 pF;
+  Rc 8.8–9.8 kΩ), 14 fixed (all W and L, mp1, mn3);
+- 15 warm-up designs (±1 step of each free parameter + 3 coupled moves);
+- then 120 RL simulations (2 × 60), 2 seeds.
+
+| | v2 (full space) | T0 seed 1 | T0 seed 2 |
+|---|---|---|---|
+| RL designs better than the warm-up best | 0 | 7 | 8 |
+| RL designs meeting all specs | 3 % | 48 % | 72 % |
+| median RL reward | −1.1 | +0.01 | +0.52 |
+| best FoM (nominal 0.622 → warm-up 0.644 →) | – | 0.658 | 0.664 |
+
+All RL designs stayed inside the space.
+
+**Conclusion:** in a tutor-narrowed space the RL works as a local optimizer. Still below the LLM-only best (0.677 /
+0.684) after 136 simulations, partly from the weaker nominal. Continue with T1–T4.
+
+**A design rule for the tutor (into the skill):** with σ 0.1 the chance that a free parameter moves ≥ 1 grid step per
+step depends on its number of grid points in the range: 5 points ≈ 1 % (practically frozen), 11 points ≈ 32 %,
+21 points ≈ 62 %. The tutor controls the exploration through the number of grid points, not the physical width.
