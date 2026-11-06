@@ -2393,3 +2393,18 @@ differs).
   - adds +0.05 with the warm start in the clean A/B;
   - adds 0 when the warm-up's best already sits on binding specs (session 2: UGBW +2.2 %, PM +1.9 %).
 - RL-first sessions cost 13–16 requests, ≈ $0.2–0.3.
+
+### 2026-11-06 — 4.v4.1: three seeds in parallel (preparation)
+**Goal:** Brent: the RL-first flow on 3 seeds, in parallel. RL 1 = `warmup(100)` + `train(500)`, RL 2 =
+`warmup(100)` + `train(800)`.
+
+**Why separate copies:** parallel MCP servers in the same `CAD/` would share `no_backup/`, and `clean.sh` (every
+100 sims) would delete the other runs' netlists mid-simulation, which gives failed sims.
+
+**What:**
+- `~/harness_lanes/s123456`, `s1`, `s2`: rsync copies of `CAD/` from `feat/m4-template` (`09ac3b5` + docs, with the
+  warm start), without `runs/`, `no_backup/`, `harness/sessions/`, `solutions/`, `tests/` or `analysis/`.
+- Outside the repo, so `CLAUDE.md` and the auto-memory don't load: closer to a blind agy start.
+- A one-simulation smoke test in `s1` worked (the copy's own `sizing_tools.py`, its own `runs/`); its run folder
+  was deleted.
+- Seeds 123456, 1, 2: the same as the milestone 3 TD3 runs.
