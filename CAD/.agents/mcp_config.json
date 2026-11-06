@@ -2,10 +2,10 @@
   "mcpServers": {
     "cad": {
       "command": "/home/brentvm/projects/CAICD-shared/.venv/bin/python",
-      "args": ["/home/brentvm/projects/CAICD-shared/CAD/mcp_server.py"],
+      "args": ["/home/brentvm/projects/CAICD-shared/CAD/hybrid_mcp_server.py"],
       "cwd": "/home/brentvm/projects/CAICD-shared/CAD",
       "env": {"PATH": "/home/brentvm/projects/CAICD-shared/.venv/bin:/usr/local/bin:/usr/bin:/bin"},
-      "timeoutSeconds": 1800
+      "timeoutSeconds": 600
     }
   }
 }

@@ -1638,3 +1638,36 @@ Plan: `~/.claude/plans/streamed-sauteeing-moonbeam.md`. Branch `feat/m4-hybrid` 
   - `get_status` answers;
   - `rl_explore` before any design gives a readable error.
 - `mcp_server.py` (the template) is unchanged.
+
+### 2026-11-06 12:45 — 4.H3: harness v2, the harness files from scratch (lean)
+**What changed:**
+- **Removed:** the v1 `AGENTS.md`, the 4 v1 agents, the 3 v1 skills. The v1 design log moved to
+  `harness/sessions/2026-11-05_gemini-3.8-flash/design_log.md` (next to that session's history).
+- **New `CAD/AGENTS.md` (2.3 kB, v1 6.3 kB):**
+  - the goal with the **budget of 100–200 simulations**;
+  - the spec table, the FoM in 3 lines, the 4 tools;
+  - **the fixed pipeline:** designer A+B (≤ 10 sims) → cycles of [`rl-explorer`, one burst of ~30 sims → designer
+    phase C, explain RL's change + 2–4 sims] until ~150 sims or 2 cycles without improvement → `reviewer`;
+  - the orchestrator passes only the phase, the count and the previous return;
+  - the rules: a reason on every call, one change per simulation, numbers from tools, one `log_entry` per step,
+    returns ≤ 80 words.
+- **New agents** (`.agents/agents/`):
+  - `designer` (1.3 kB): A+B analysis/hand design/refinement; C: explain RL's `changes_vs_previous_best` in circuit
+    terms, then 2–4 reasoned changes;
+  - `rl-explorer` (0.75 kB): one burst, its size as a judgment (30; 20 after a burst without improvement; fewer near
+    the budget);
+  - `reviewer` (0.8 kB): margins, Pareto, the 3 key decisions (LLM or RL), the cost.
+- **New skills:**
+  - `opamp-design` (3.2 kB): v1's circuit map, allowed values, equations and knobs, trimmed; incl. the area
+    correction (Rc dominates);
+  - `hybrid-rl` (1.5 kB): how the tool learns from every design, starts at the best, explores σ 0.1 ≈ ±5 % of each
+    range (W and L rarely move), the cost, the report, the burst sizing.
+- `.agents/mcp_config.json` → `hybrid_mcp_server.py`; `harness/session_prompt.md` (3 lines); `harness/README.md`; a
+  fresh `harness/design_log.md`.
+- `tests/test_harness_files.py` rewritten (5 tests):
+  - **size budgets** (`AGENTS.md` ≤ 3.5 kB, agents ≤ 2 kB, skills ≤ 4.5 kB);
+  - frontmatter; the agents name only real MCP tools;
+  - `AGENTS.md` names every agent/skill/tool;
+  - the config.
+
+**Fixed context:** 9.9 kB in total (v1 ≈ 22 kB). All tests pass.

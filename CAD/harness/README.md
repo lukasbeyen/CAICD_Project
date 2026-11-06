@@ -1,38 +1,30 @@
-# Running the sizing harness with Antigravity CLI (`agy`)
+# Running the sizing harness (version 2: LLM + RL) with Antigravity CLI (`agy`)
 
-The harness = `AGENTS.md` (always-loaded context and workflow), `.agents/agents/` (the 4 subagents),
-`.agents/skills/` (3 skills), `.agents/mcp_config.json` (the `cad` MCP server = `mcp_server.py` + `sizing_tools.py`),
-and `harness/design_log.md` (the shared memory).
+The harness consists of:
+- `AGENTS.md`: the always-loaded context and the pipeline;
+- `.agents/agents/`: `designer`, `rl-explorer`, `reviewer`;
+- `.agents/skills/`: `opamp-design`, `hybrid-rl`;
+- `.agents/mcp_config.json`: the MCP server `cad` = `hybrid_mcp_server.py` over `hybrid_tools.py`, which builds on
+  `sizing_tools.py`;
+- `harness/design_log.md`: the memory, written by the agents through `log_entry`.
+
+The designer's designs become TD3 experience. Short RL bursts (`rl_explore`, ~30 simulations) search around the
+current best design, and the designer explains and builds on what they find. The total budget is 100–200 simulations.
 
 ## Once
-1. Install: `curl -fsSL https://antigravity.google/cli/install.sh | bash` (Linux arm64/amd64, macOS), then open a
-   new terminal; `agy --version`.
-2. The paths in `.agents/mcp_config.json` are for Brent's VM. On another machine, change `command` (a Python with the
-   course packages + `mcp`), `args` (the absolute path of `mcp_server.py`) and `cwd` (this `CAD/` folder). ngspice
-   must be on the `PATH` given there.
+1. Install with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, then `agy --version`.
+2. The paths in `.agents/mcp_config.json` are for Brent's VM; adapt `command`, `args` and `cwd` on another machine.
+3. In `agy`: allow the `cad` tools with "always allow" (project scope), so a session doesn't stop on a permission
+   question.
 
-## A session (interactive)
+## A session
 ```bash
 cd CAD
-agy                      # first time: sign in with the Google AI Plus account
-```
-Inside `agy`:
-- `/mcp`: `cad` is connected with 4 tools (`simulate`, `warmup`, `train`, `get_status`);
-- `/skills`: `two-stage-opamp-design`, `rl-sizer`, `design-log`;
-- `/model`: choose the model (write it in the session header of the design log);
-- first test: *"Use the CAD tools to show the current experiment status."*;
-- full run: paste the text of `harness/session_prompt.md`. Allow the `cad` tools when asked.
-
-## A session (headless, for the traces in the report)
-```bash
-cd CAD
+agy                     # interactive: paste harness/session_prompt.md
 agy -p "$(cat harness/session_prompt.md)" --output-format stream-json > harness/sessions/session_$(date +%Y%m%d_%H%M).jsonl
 ```
-In headless mode, tools that need approval are refused without asking. Allow the `cad` tools first (permission rule
-`mcp(cad/*)`), or use the interactive mode.
 
 ## What a session leaves behind
-- `harness/design_log.md`: the reasoning per step (the memory).
-- `runs/mcp_<timestamp>/harness_history.csv`: every simulation with its time, source, reason, specs and reward.
-- `runs/mcp_<timestamp>/feasible_netlists/`: the netlists of designs that met all specs.
-- `harness/sessions/*.jsonl` (headless): the full transcript with every tool call.
+- `harness/design_log.md`: the reasoning per step.
+- `runs/mcp_<time>/harness_history.csv`: every simulation (source `simulate` or `rl`, reason, specs, reward).
+- `runs/mcp_<time>/feasible_netlists/`: the designs that met all specs.
