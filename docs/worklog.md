@@ -1671,3 +1671,32 @@ Plan: `~/.claude/plans/streamed-sauteeing-moonbeam.md`. Branch `feat/m4-hybrid` 
   - the config.
 
 **Fixed context:** 9.9 kB in total (v1 ≈ 22 kB). All tests pass.
+
+### 2026-11-06 12:50 — 4.H4: harness v2 test run (Claude Code plays the agents) + an RL diagnostic
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-hybrid/` (README with the full table, the design log
+written via `log_entry`, the history, the sizes).
+
+**Result:**
+- 97 simulations: 7 by the designer, 90 in 4 RL bursts. All specs met at **sim 2**. Final **FoM 0.677** (sim 56:
+  215 µA, 831 µm², PM 60.3°, UGBW 104.3 MHz).
+- The final design came entirely from the designer's 7 simulations. **The RL bursts found 0 improvements** (5 RL
+  designs met all specs, best 0.607).
+- **Tokens:** ≈ 126k input + 8.5k output, vs ≈ 244k for v1 (**−48 %**), despite 53 turns. The orchestrator ≈ 28k (v1
+  ≈ 100k), thanks to the small `AGENTS.md`, the 1.5 kB tool descriptions (v1 2.5 kB) and the log via the tool.
+
+**Diagnostic** (the same seeded buffer, one 30-step burst, 2 seeds, only the exploration noise varied; not part of
+the harness): σ 0.1 / 0.05 / 0.02 → improvements 0 / 0 / 0. RL designs meeting all specs: 3 % / 10–20 % / 20 %.
+Median RL reward −1.1 / −0.7 / −0.3.
+
+**Three causes:**
+1. The template noise moves all 20 parameters at once (~5 % of each range), which breaks the mirror balance.
+2. The actor drifts from the warm-started design with every TD3 update of a still-untrained critic (even at σ 0.02).
+3. The converged best design sits on the PM boundary (+0.3°).
+
+**For Brent to decide** (none done):
+- stop the cycles after the first burst without improvement (fewer tokens and simulations);
+- the bursts earlier, before the designer converges, where RL has room;
+- a smaller exploration noise for the bursts only (our tool's parameter; σ 0.02 made 7× more RL designs feasible, but
+  not better);
+- no actor updates during the first bursts, to avoid the drift (deviates from TD3's delayed updates);
+- or keep it, and report honestly that around a converged, constraint-bound design the RL adds nothing.
