@@ -1734,3 +1734,35 @@ All RL designs stayed inside the space.
 **A design rule for the tutor (into the skill):** with σ 0.1 the chance that a free parameter moves ≥ 1 grid step per
 step depends on its number of grid points in the range: 5 points ≈ 1 % (practically frozen), 11 points ≈ 32 %,
 21 points ≈ 62 %. The tutor controls the exploration through the number of grid points, not the physical width.
+
+### 2026-11-06 13:00 — 4.T1: harness v3, the backend `tutor_tools.py`
+**What changed:** new `CAD/tutor_tools.py`, `TutorExperiment(HybridExperiment)`.
+- **`setup_rl(nominal, search_space, warmup, reason)`**, once per session:
+  1. validates the nominal on the full grid;
+  2. **narrows only the RL env's grid**: a free parameter keeps its grid between [low, high] (both on the YAML grid,
+     low ≤ nominal ≤ high, ≥ 2 points); every other parameter is fixed at the nominal (1 grid point);
+     `action_refine` is unchanged and maps [−1, 1] onto the small ranges;
+  3. checks every warm-up design (`changes` relative to the nominal) against that grid **before** simulating
+     (outside the space, or changing a fixed parameter → refused, the grid restored);
+  4. simulates the nominal and the warm-up designs through `HybridExperiment.simulate`, so each becomes a TD3
+     transition and its `purpose` is stored as the reason;
+  5. returns the compact sensitivity table: per design the changes, reward, met, the Δ % of gain/UGBW/PM/SR/
+     current/area; plus the free ranges with their number of grid points.
+  
+  A failed nominal restores the full grid.
+- **`run_rl(n ≤ 200)`:** TD3 alone, in `rl_explore` bursts of ≤ 60 (the warm start on the current best, episodes from
+  there). It reports the start reward, the running best at 25/50/100 %, the number of improvements, which parameters
+  the improving designs moved, and the best design as changes relative to the nominal.
+- New `CAD/tests/test_tutor_tools.py` (11 tests):
+  - only the RL grid narrows; every RL action stays inside the space; the round trip in the narrowed grid;
+  - nominal + warm-up simulated and pushed, the table fields, the purposes stored;
+  - 6 invalid setups refused without simulating (nominal outside, off-grid bound, unknown name, warm-up outside,
+    warm-up on a fixed parameter, too many);
+  - once per session; a failed nominal restores the grid;
+  - `run_rl` needs setup and is bounded; 70 = 60 + 10 simulations, all inside the space, the report consistent.
+
+**Verification:**
+- Mutation check: 3 deliberate bugs (fixed parameters not fixed, the grid not restored, only one burst) are each
+  caught.
+- Real ngspice: the T0 plan with 8 warm-up designs → a 1.6 kB table; `run_rl(30)` → a 420 B report, 1 improvement
+  (Rc 9.8 → 9.7 kΩ). All 156 tests pass.
