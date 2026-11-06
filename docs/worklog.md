@@ -2513,3 +2513,21 @@ Tokens: 16–20 requests, 376–483k cache read per session.
   found the final design in 2 of 3 runs), the bigger warm-up (+0.11, seed 2).
 - Seed 1 is still weak: its first LLM step kept Cc at 5–6 pF, because the margin goal overrode the Cc rule.
 - Several changes at once, so the contributions are per-seed observations, not an ablation.
+
+### 2026-11-06 — 4.v4.1: skills cleaned of run-derived content (Brent: no hardcoding of findings)
+**Decision (Brent):** the skills and prompts may contain only general knowledge. Findings of our tested runs must
+not be hardcoded into later runs: that would be cheating. Saved as a standing rule in Claude's memory.
+
+**What changed** (commit `6aaa2f9`, copied into the three lanes, 135 tests pass):
+- `rl-tutoring`: the Cc sentence of `a2a41c6` ("usually 0.5–1 pF; if above ≈ 1 pF move it there in one step") is
+  replaced by a general statement. The noise moves each parameter only a few grid steps per draw, so large moves must
+  come from the LLM, derived from the equations, re-tuning what depends on them.
+- `rl-tutoring`: "hand over … with some margin" is now a trade-off. Margin gives the local search room, but weigh it
+  against the FoM yourself.
+- `opamp-design`: "can differ ~2×" → "short-channel effects make the real values differ".
+
+**Still to fix in the prompts:**
+- the "≥ 10 % margin" goal (it came from one run) → a general trade-off statement;
+- the simulation counts were tuned on seeds 123456 / 1 / 2, so the final evaluation belongs on fresh seeds.
+
+**Round 3's `warmup(200)`:** draws 101–200 added +0.019 / +0.037 / +0.076 (seed 2's whole warm-up gain came there).
