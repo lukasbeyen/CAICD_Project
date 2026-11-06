@@ -2559,3 +2559,26 @@ comparison is both flows run by fresh blind sessions on the same unseen seeds 3,
 
 ≈ 2500 sims (vs ≈ 2150 for RL-first), so the comparison is also made at equal simulation numbers. Same lanes
 `~/harness_lanes/s3–s5`, new sessions after the RL-first runs.
+
+### 2026-11-06 — 4.v4.1: evaluation of RL-first B on unseen seeds 3, 4, 5
+**Record:** `CAD/harness/sessions/2026-11-06_eval-rl-first-seeds345/`.
+
+**Result:**
+
+| seed | final FoM | design |
+|---|---|---|
+| 3 | 0.702 | 230 µA, 716 µm² |
+| 4 | 0.616 | 256 µA, 780 µm² |
+| 5 | 0.698 | 221 µA, 762 µm² |
+| **mean** | **0.672 ± 0.049** | |
+
+≈ 2150 sims, 9–10 min in parallel, 13–17 requests, 269–421k cache read per session. Clean (only the allowed files
+read; judgement stops with reasons).
+
+**Interpretation:**
+- With the general skill wording, the LLM step made the large Cc move itself (into the sub-pF range), without any
+  run-derived number in the prompt.
+- Train 2 with the warm start gained in all three and produced every final design.
+- This is the honest evaluation number for RL-first: unseen seeds, frozen harness.
+
+**Next:** the LLM-first big-RL flow on the same seeds (Brent is starting it).
