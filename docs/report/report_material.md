@@ -389,7 +389,8 @@ set up the RL's job, and the RL optimizes.
 | v1 (LLM designs) | ≈ 244k | 16 | 0.684 | the LLM |
 | v2 (LLM + RL bursts) | ≈ 126k | 97 | 0.677 | the LLM |
 | v3 (LLM tutors the RL) | ≈ 30k | 146 | 0.650 | the RL |
-| **v3.1 (+ `refine` between two RL runs)** | **≈ 46k** | **199** | **0.686** | **the LLM's refine, after the RL** |
+| v3.1 (+ `refine` between two RL runs) | ≈ 46k | 199 | 0.686 | the LLM's refine, after the RL |
+| **v3.2, final (one RL run, then `refine`, end)** | **≈ 39k** | **101** | **0.686** | **the LLM's refine, after the RL** |
 
 **Reading:**
 - v3 is 8× cheaper in tokens, and the RL really optimizes in a space the LLM made well-conditioned, which gives many
@@ -409,6 +410,11 @@ Test run (`CAD/harness/sessions/2026-11-06_claude-code-tutor2/`), with the same 
 - **199 simulations, 7 tool calls, ≈ 46k input tokens**;
 - **the best FoM of all versions**, at about a fifth of v1's tokens.
 
+**Version 3.2, the final harness:** RL run 2 of v3.1 found nothing, so it was dropped. The session is now setup →
+one RL run (the tutor judges its size, 60–100) → `refine` → end. The same 0.686 in **101 simulations, ≈ 39k
+tokens** (derived from v3.1's first 101 simulations, which are exactly this session). `refine`'s optional re-centred
+space was removed with the second run.
+
 **The division of labour that works:**
 - the LLM sets up the space and the warm-up and makes the circuit-level coupled move;
 - the RL does the local search and supplies many feasible alternatives (124 of 177 designs met all specs).
@@ -416,7 +422,7 @@ Test run (`CAD/harness/sessions/2026-11-06_claude-code-tutor2/`), with the same 
 ---
 
 ## Tests overall
-`cd CAD && python -m pytest -q`: **161 passed** (branch `feat/m4-tutor`):
+`cd CAD && python -m pytest -q`: **160 passed** (branch `feat/m4-tutor`):
 
 | file | tests |
 |---|---|
@@ -432,5 +438,5 @@ Test run (`CAD/harness/sessions/2026-11-06_claude-code-tutor2/`), with the same 
 | `test_mcp_server.py` | 1 |
 | `test_hybrid_tools.py` | 14 |
 | `test_hybrid_mcp_server.py` | 1 |
-| `test_tutor_tools.py` | 15 |
+| `test_tutor_tools.py` | 14 |
 | `test_tutor_mcp_server.py` | 1 |

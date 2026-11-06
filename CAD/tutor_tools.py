@@ -1,14 +1,14 @@
 """Milestone 4, version 3: the LLM as the RL's tutor.
 
-The LLM doesn't design step by step. It prepares the RL's job, the RL optimizes, and in between the LLM makes one
-educated improvement:
+The LLM doesn't design step by step. It prepares the RL's job, the RL optimizes, and then the LLM makes one educated
+improvement and the session ends:
 - setup_rl(nominal, search_space, warmup): a nominal hand design; the RL's search space (the parameters the RL may
   change, each in a small range around the nominal; all others fixed); and a small warm-up set (designs with a
   purpose each, e.g. a one-at-a-time sensitivity study). Every design becomes TD3 experience; the LLM gets back a
   compact sensitivity table;
 - run_rl(n_sims): TD3 alone in that space, in short bursts that start at the current best design (hybrid_tools.py);
-- refine(designs, search_space): between two RL runs, a few reasoned designs relative to the current best (moves the
-  RL can't easily make, e.g. balanced current changes), and optionally a re-centred search space around the best.
+- refine(designs): after the RL run, a few reasoned designs relative to the current best (moves the RL can't easily
+  make, e.g. a coupled change that keeps the mirror balance).
 Strictly fewer than 200 simulations in total (MAX_TOTAL_SIMS, enforced). Only the RL env's grid is narrowed; the
 TD3 agent and its hyperparameters are the template's.
 """
@@ -16,7 +16,6 @@ from numbers import Real
 
 from hybrid_tools import MAX_BURST, HybridExperiment
 from sizing_tools import check_count, compact
-from td3 import ReplayBuffer
 
 MAX_TOTAL_SIMS = 199  # the whole session: strictly fewer than 200 simulations
 MAX_WARMUP = 20       # warm-up designs per setup_rl
@@ -57,8 +56,8 @@ class TutorExperiment(HybridExperiment):
             "simulator_calls": self.simulator_calls,
         }
 
-    def refine(self, designs, search_space=None, reason=""):
-        """Between two RL runs: <= 5 reasoned designs relative to the current best, optionally a re-centred space."""
+    def refine(self, designs, reason=""):
+        """After the RL run: <= 5 reasoned designs relative to the current best (they are also RL experience)."""
         if self.nominal_call is None:
             raise ValueError("call setup_rl first.")
         if not isinstance(designs, list) or not 1 <= len(designs) <= MAX_REFINE:
@@ -66,18 +65,11 @@ class TutorExperiment(HybridExperiment):
         self._budget(len(designs))
         best = self._best()
         base_call = self._call_of(best)  # all designs are relative to the best at the start of the call
-        grid = self._narrow(best["parameters"], search_space) if search_space else self.env.dict_params
-        self._check_designs(best["parameters"], designs, grid)
-        if search_space:  # a new RL grid around the best: re-encode the buffer, and warm-start again at the next burst
-            self.env.dict_params = grid
-            self._rebuild_buffer()
-            self.warm_started_for = None
+        self._check_designs(best["parameters"], designs, self.env.dict_params)
         best_short = compact(best, units=False)
         return {
             "best_before": {"reward": best_short["reward"], "specs": best_short["specs"]},
-            "free": self._free_ranges(search_space) if search_space else None,
             "refined": self._simulate_table(designs, base_call, best["specs"]),
-            "replay_experiences": self.replay.size,
             "simulator_calls": self.simulator_calls,
         }
 
@@ -183,19 +175,6 @@ class TutorExperiment(HybridExperiment):
     def _call_of(self, candidate):
         # the latest simulation number of a stored design
         return max(call for call, design in self.designs.items() if design["parameters"] == candidate["parameters"])
-
-    def _rebuild_buffer(self):
-        """After a new RL grid: keep the transitions whose design lies in it, with the action re-encoded for it."""
-        old, old_designs = self.replay, self.buffer_designs
-        self.replay = ReplayBuffer(old.state.shape[1], old.action.shape[1], max_size=old.max_size)
-        self.buffer_designs = []
-        for i in range(old.size):
-            try:
-                params = self._validate_parameters(old_designs[i])  # on the new grid
-            except ValueError:
-                continue  # outside the new space: no longer reachable, and its old action would mean another design
-            self._push(old.state[i], self.to_action(params), old.reward[i, 0], old.next_state[i],
-                       bool(1.0 - old.not_done[i, 0]), params)
 
     def _range(self, name, bounds, center_value):
         # [low, high] on the YAML grid, with low <= center <= high and more than one grid point

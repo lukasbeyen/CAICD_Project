@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import sys
 from threading import Lock
-from typing import Any, Optional
+from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -47,16 +47,14 @@ def create_server(experiment):
 
     @server.tool()
     def run_rl(n_sims: StrictInt, reason: str = "") -> dict[str, Any]:
-        """TD3 alone for n_sims simulations in that space (< 200 in total for the session). Returns the best design
-        (changes vs nominal) and which parameters its improvements moved."""
+        """TD3 alone for n_sims simulations in that space (< 200 in total). Returns the best design (changes vs
+        nominal) and which parameters its improvements moved."""
         return call("run_rl", n_sims=n_sims, reason=reason)
 
     @server.tool()
-    def refine(designs: list[WarmupDesign], search_space: Optional[dict[str, list[StrictFloat]]] = None,
-               reason: str = "") -> dict[str, Any]:
-        """Between RL runs: 1-5 reasoned designs (changes vs the current best), optionally a new search space
-        {name: [low, high]} around the best. Returns their sensitivity rows."""
-        return call("refine", designs=[item.model_dump() for item in designs], search_space=search_space, reason=reason)
+    def refine(designs: list[WarmupDesign], reason: str = "") -> dict[str, Any]:
+        """After the RL run: 1-5 reasoned designs (changes vs the current best). Returns their sensitivity rows."""
+        return call("refine", designs=[item.model_dump() for item in designs], reason=reason)
 
     @server.tool()
     def get_status(k: StrictInt = 3) -> dict[str, Any]:

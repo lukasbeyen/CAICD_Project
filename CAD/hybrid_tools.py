@@ -30,8 +30,6 @@ class HybridExperiment(SizingExperiment):
         self.designs = {}             # simulation number -> the stored candidate (LLM and RL designs)
         self.warm_started_for = None  # the parameters of the best design the actor was last pulled towards
         self.log_entries = 0
-        self.buffer_designs = []      # the design of every transition in the replay buffer (same order), so the
-                                      # actions can be re-encoded if the RL's grid changes (tutor_tools.refine)
 
     # ---------- designs <-> RL states and actions ----------
 
@@ -77,7 +75,7 @@ class HybridExperiment(SizingExperiment):
         state = self.state_of(candidate)
         # the LLM's step as a TD3 transition: from the base design's state, the action that gives this design
         start = self.state_of(base_design) if base_design is not None else state
-        self._push(start, self.to_action(params), candidate["reward"], state, False, params)
+        self.replay.push(start, self.to_action(params), candidate["reward"], state, False)
         self.designs[self.simulator_calls] = candidate
         return result
 
@@ -99,7 +97,7 @@ class HybridExperiment(SizingExperiment):
                 self.simulator_calls += 1
                 candidate = self._record_and_log(self.env, self.env.param_values, self.env.real_specs, "rl", reason)
                 if candidate is not None:  # a failed simulation never enters the replay buffer
-                    self._push(self.observation, action, reward, next_observation, done, dict(self.env.param_values))
+                    self.replay.push(self.observation, action, reward, next_observation, done)
                     # one TD3 update per new transition; the buffer samples with replacement, so this works from the
                     # first RL step with the template's batch size, even with fewer transitions than that
                     self.agent.update_parameters(self.replay.sample(self.batch_size), self.updates)
@@ -151,11 +149,6 @@ class HybridExperiment(SizingExperiment):
             f.write(f"\n### {self.log_entries}. {agent.strip()} (simulations so far: {self.simulator_calls})\n"
                     f"{text.strip()}\n")
         return {"entry": self.log_entries}
-
-    def _push(self, state, action, reward, next_state, done, params):
-        """One transition into the replay buffer, and its design into buffer_designs (the same index)."""
-        self.replay.push(state, action, reward, next_state, done)
-        self.buffer_designs.append(dict(params))
 
     # ---------- the warm start ----------
 

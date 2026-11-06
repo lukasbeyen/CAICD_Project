@@ -1881,3 +1881,30 @@ simulations in total.
 **Comparison:** v3.1 gives the **best FoM of all versions** (0.686 vs v1's 0.684, v2's 0.677, v3's 0.650) at ~1/5 of
 v1's tokens. The deciding step was the LLM's educated improvement between the RL runs. The RL's own share: 0.606 →
 0.646 in run 1, nothing in run 2 (the design was constraint-bound).
+
+### 2026-11-06 14:20 — 4.T8: harness v3.2 (final): one RL run, then refine, then the end
+**Goal:** Brent: the second RL run didn't help, so remove it; after `refine` the session ends (fewer tokens and
+simulations).
+
+**What changed:**
+- `tutor.md`: the steps are now:
+  1. the circuit in 2–3 sentences + the nominal;
+  2. the space;
+  3. the warm-up;
+  4. `setup_rl`;
+  5. **the tutor's judgment** on the RL size (typically 60–100) → one `run_rl`;
+  6. `refine` (2–5 designs) → stop;
+  7. the log.
+  
+  Steps 1 and 5 also cover two phrases of the PDF: "explain its functionality" and "run the RL-based sizer … based
+  on its own judgment".
+- `AGENTS.md`, `rl-tutoring`: one RL run, then `refine`; the budget ≈ 80–120 (hard cap 199 unchanged). The sentence
+  that named a concrete successful move from a test session was removed from the skill again (no results in the
+  prompts).
+- **Removed, because only the second RL run needed it:** `refine`'s optional re-centred `search_space`,
+  `_rebuild_buffer`, `buffer_designs` and `_push` in `hybrid_tools.py`, the re-centring test. `refine` is now
+  `refine(designs, reason)`.
+- The tool descriptions are 2.4 kB.
+
+**Result** (derived: v3.1's run has exactly this session as its first 101 simulations, deterministic): **FoM 0.686 in
+101 simulations, ≈ 39k input tokens, 14 turns** (v3.1: 199 sims, ≈ 46k). All 160 tests pass.

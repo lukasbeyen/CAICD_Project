@@ -145,7 +145,7 @@ def test_run_rl_is_n_simulations_inside_the_space(make_experiment):
     assert set(report['best_changes_vs_nominal']) <= set(space)
 
 
-# ---------- refine: the educated improvement between two RL runs ----------
+# ---------- refine: the educated improvement after the RL run ----------
 
 def test_refine_simulates_reasoned_designs_relative_to_the_best(make_experiment):
     experiment = make_experiment()
@@ -158,7 +158,7 @@ def test_refine_simulates_reasoned_designs_relative_to_the_best(make_experiment)
     size, calls = experiment.replay.size, experiment.simulator_calls
     result = experiment.refine([{'changes': {'mn4': target}, 'purpose': 'balanced current move'}], reason='educated')
     assert experiment.simulator_calls == calls + 1 and experiment.replay.size == size + 1
-    assert result['refined'][0]['changes'] == {'mn4': target} and result['free'] is None
+    assert result['refined'][0]['changes'] == {'mn4': target}
     assert history(experiment).reason.iloc[-1] == 'balanced current move'
     stored = experiment.designs[experiment.simulator_calls]['parameters']
     assert {k: v for k, v in stored.items() if k != 'mn4'} == {k: v for k, v in best['parameters'].items() if k != 'mn4'}
@@ -176,27 +176,6 @@ def test_refine_limits_and_invalid_designs(make_experiment):
         with pytest.raises(ValueError):
             experiment.refine(designs)
     assert experiment.simulator_calls == calls
-
-
-def test_a_new_space_recentres_the_grid_and_re_encodes_the_buffer(make_experiment):
-    experiment = make_experiment()
-    nominal, space, warmup = plan(experiment)
-    experiment.setup_rl(nominal, space, warmup)
-    experiment.run_rl(30)
-    best = experiment._best()['parameters']
-    step = experiment.full_grid['mn4'][2]
-    new_space = {'mn4': [best['mn4'] - step, best['mn4'] + step], 'cap': space['cap']}  # mn1 and res now fixed
-    experiment.refine([{'changes': {'mn4': best['mn4'] - step}, 'purpose': 'probe'}], search_space=new_space)
-    assert experiment.warm_started_for is None  # the next burst warm-starts in the new grid
-    grid = experiment.env.dict_params
-    assert grid['mn1'][0] == best['mn1'] and round((grid['mn1'][1] - grid['mn1'][0]) / grid['mn1'][2]) == 1  # fixed
-    # every stored transition is a design inside the new space, and its action maps back to exactly that design
-    assert experiment.replay.size == len(experiment.buffer_designs) > 0
-    for i, design in enumerate(experiment.buffer_designs):
-        assert experiment.env.action_refine(experiment.replay.action[i]) == design
-        assert design['mn1'] == best['mn1'] and design['res'] == best['res']
-    report = experiment.run_rl(10)
-    assert set(report['moved_in_improvements']) <= set(new_space)
 
 
 # ---------- the budget: strictly fewer than 200 simulations ----------

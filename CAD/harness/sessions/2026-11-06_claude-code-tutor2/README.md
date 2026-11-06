@@ -29,3 +29,8 @@ specs. Pareto: 0.686 (213 µA / 822 µm²) and 0.665 (224 µA / 815 µm², more 
 | v2 (LLM + RL bursts) | ≈ 126k | 53 | 18 | 97 | 0.677 |
 | v3 (LLM tutors the RL) | ≈ 30k | 13 | 5 | 146 | 0.650 |
 | **v3.1 (+ refine between two RL runs)** | **≈ 46k** | **15** | **7** | **199** | **0.686** |
+
+## Version 3.2 (the final harness) = the first 101 simulations of this run
+Brent dropped the second RL run (it found nothing). v3.2's session is setup → `run_rl` → `refine` → end, which is
+exactly simulations 1–101 here: **FoM 0.686** (found by `refine`, sim 99), 75 of 101 designs met all specs,
+≈ 39k input tokens (the turn model with v3.2's prompts and tool descriptions).

@@ -3,7 +3,7 @@
 Goal: size the two-stage Miller opamp so that all hard specs are met and area and supply current are as low as
 possible, with **strictly fewer than 200 simulations** in total (the tools enforce it). The LLM doesn't design step
 by step. It sets up the RL's job (a nominal design, the RL's search space, a warm-up set), TD3 does the optimizing,
-and between two RL runs the LLM makes one educated improvement.
+then the LLM makes one educated improvement and the session ends.
 
 | spec | target | kind |
 |---|---|---|
@@ -19,7 +19,7 @@ and between two RL runs the LLM makes one educated improvement.
 ## Tools (MCP server `cad`)
 - `setup_rl`: once; the nominal, the search space and the warm-up. Returns a sensitivity table.
 - `run_rl`: TD3 alone, n simulations.
-- `refine`: between the two RL runs; 1–5 reasoned designs, optionally a new search space.
+- `refine`: after the RL run; 1–5 reasoned designs.
 - `get_status`: the best designs; no simulation.
 - `log_entry`: your step in the log, ≤ 1200 characters.
 
