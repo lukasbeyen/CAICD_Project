@@ -2645,3 +2645,19 @@ session (0.490: `tutor.md`'s < 200 flow, `train(60)` without the warm start, a f
     repo.
 - Brent expects agy's quota to run out. Every simulation is in `harness_history.csv` at once, so a partial run is
   still reportable.
+
+### 2026-11-06 — 4.v4.1: the final flow in agy, seed 3 (stopped by the quota)
+**Record:** `CAD/harness/sessions/2026-11-06_agy-rl-first-seed3/` (commit `4093e5d`; agy's transcript stays in
+`~/.gemini/…/brain/`, not committed).
+
+**Result:**
+- It completed RL 1 (identical to the Claude Code seed-3 run, verified), the LLM step (4 sims → **0.699**) and
+  `warmup(200)` (0.682).
+- Then the quota ran out: no second training, no reviewer.
+- Best 0.6986 (224 µA, 751 µm²) after 1214 sims.
+- 15 model calls; 50.1k input + 293.7k cached + 7.0k output.
+
+**Interpretation:**
+- agy's LLM step was as good as Claude Code's on the identical state (0.699 vs 0.691).
+- The final flow works in agy. Without subagents it costs half the calls of the old agy session, but the full run
+  still exceeds this quota.

@@ -376,6 +376,17 @@ for tuning:
 
 The LLM acts only twice, so the token cost stays low.
 
+**The final flow in agy** (seed 3, Claude Sonnet 4.6, `CAD/harness/sessions/2026-11-06_agy-rl-first-seed3/`;
+prompt `rl_first_final_agy.txt` = the final prompt + "no subagents"):
+- **It stopped after the second warm-up:** the agy quota ran out, so the second `train(800)` and the reviewer were
+  not run.
+- **RL 1 is identical to the Claude Code run of seed 3** (the same seed and calls, verified value for value). That
+  makes the LLM step directly comparable:
+  - agy's 4 refinements reached **0.699** (Rc re-tuned for PM; 224 µA, 751 µm²);
+  - Claude Code's 2 reached 0.691 (final 0.702 after the second training).
+- **Cost:** 1214 simulations, 6.9 min, 15 model calls: 50.1k input + 293.7k cached + 7.0k output (agy's counts).
+  The earlier agy session with subagents had 32 calls and 85.2k + 628.7k + 17.0k.
+
 **The comparison flow on the same unseen seeds: LLM first, then one big RL.** Prompt
 `CAD/harness/prompts/llm_first_big_rl_evaluated.txt`, records
 `CAD/harness/sessions/2026-11-06_eval-llm-first-big-rl-seeds345/`:
