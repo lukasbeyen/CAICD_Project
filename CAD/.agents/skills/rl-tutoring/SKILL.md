@@ -25,4 +25,11 @@ description: How to set up the TD3 sizer's job - the search space (which paramet
   - 2–3 coupled moves, e.g. both mirror currents up/down with the balance S_p3/S_p1 = 2·S5/S4 kept.
   
   Every design is real data for the RL, and the table shows you the sensitivities.
-- **Budget:** nominal + warm-up ≈ 10–20 simulations; `run_rl` 100–150.
+- **Between the two RL runs** (`refine`), use the first run's report:
+  - **reasoned designs:** a coupled move keeps the mirror balance (mn4, mn5 and mp3 together), which the RL's
+    one-parameter-at-a-time noise rarely finds; or a step against the binding spec's margin;
+  - **a new space**, only if needed: re-centre a parameter whose best value sits at the edge of its range; fix a
+    parameter that never moved in the improvements; give a promising one more grid points. The buffer keeps the
+    designs inside the new space.
+- **Budget** (strictly < 200, enforced): nominal + warm-up ≈ 10–20, `run_rl` ≈ 80, `refine` 2–5, `run_rl` with
+  the rest.

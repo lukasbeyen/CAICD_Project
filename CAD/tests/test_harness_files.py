@@ -9,7 +9,7 @@ import yaml
 CAD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENTS = os.path.join(CAD, '.agents', 'agents')
 SKILLS = os.path.join(CAD, '.agents', 'skills')
-MCP_TOOLS = {'setup_rl', 'run_rl', 'get_status', 'log_entry'}
+MCP_TOOLS = {'setup_rl', 'run_rl', 'refine', 'get_status', 'log_entry'}
 
 
 def frontmatter(path):

@@ -1827,3 +1827,39 @@ more simulations.
 `docs/report/report_material.md` §4, new subsection "Version 3: the LLM as the RL's tutor": why, what changed (the
 grid-point rule), the test run, a comparison table of v1/v2/v3 (tokens, simulations, best FoM, who found it), and the
 honest reading. Test table: 157 tests.
+
+### 2026-11-06 13:45 — 4.T6: harness v3.1: two RL runs with an educated LLM improvement in between, < 200 sims
+**Goal:** Brent: the tutor calls `run_rl` twice, with an educated LLM improvement in between; strictly fewer than 200
+simulations in total.
+
+**What changed:**
+- `CAD/tutor_tools.py`:
+  - **`MAX_TOTAL_SIMS = 199`, enforced:** `setup_rl`, `refine` and `run_rl` refuse a call that would go over it, and
+    give the remaining count; `run_rl` reports `simulations_left`;
+  - **new `refine(designs, search_space = None, reason)`**: 1–5 reasoned designs relative to the best at the start of
+    the call, each with a purpose, simulated and pushed as TD3 experience. With a `search_space`:
+    - the RL grid is re-narrowed around the current best (one helper `_narrow` for setup and refine);
+    - the **replay buffer is rebuilt**: the transitions whose design lies in the new space are kept, with their
+      action re-encoded for the new grid; outside designs are dropped;
+    - the next burst warm-starts again;
+  - factored helpers: `_check_designs` (everything checked before simulating), `_simulate_table`, `_free_ranges`,
+    `_call_of`.
+- `CAD/hybrid_tools.py`: every push goes through `_push(…, params)`, which also stores the design in
+  `buffer_designs` (aligned with the buffer), so the actions can be re-encoded.
+- `CAD/tutor_mcp_server.py`: a 5th tool `refine`; the descriptions are 2.6 kB in total.
+- `AGENTS.md`: < 200 simulations (enforced); the 5 tools. `tutor.md`: setup → `run_rl` (~80) → `refine` (2–5
+  designs, maybe a new space) → `run_rl` (`simulations_left`) → log (1.49 kB, within its 1.5 kB budget).
+  `rl-tutoring`: what to do in `refine` (balanced coupled moves, when to re-centre/fix/widen) and the budget split.
+- Tests:
+  - `test_tutor_tools.py` +4:
+    - `refine` relative to the best (1 simulation + 1 transition, the other parameters unchanged, the purpose
+      stored);
+    - the limits (needs setup, 1–5 designs, a fixed parameter refused) without simulating;
+    - a new space: the grid re-centred and fixed parameters, every buffer action maps back to its design in the new
+      grid, outside designs dropped, the warm start forced, the next run moves only the new free parameters;
+    - **the budget**: 9 + 150 → a 41-simulation `run_rl` refused ("40 simulations left") → refine + 39 = 199 → any
+      further call refused ("0 left").
+  - `test_tutor_mcp_server.py`: 5 tools, < 3000 B.
+  - All 161 pass.
+
+**Verification:** the mutation check (no buffer rebuild, no budget in `run_rl`, no forced warm start): each is caught.
