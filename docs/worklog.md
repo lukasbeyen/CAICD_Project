@@ -10,7 +10,7 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 - Milestones 1 and 2 on `main` (PR #8).
 - Milestone 3 on `feat/td3` (not pushed).
 - Milestone 4 on `feat/m4-harness` (from `feat/td3`). Both merged with `main` (Lukas's M3) on 6 Nov and pushed as
-  **`einstein_LLM`**. **Current branch: `feat/m4-template`** (harness v4: only the course template's tools; from `feat/m4-tutor` = v3.2; not pushed; 133 tests pass).
+  **`einstein_LLM`**. **Current branch: `feat/m4-template`** (harness v4.1: only the course template's tools + the warm-up and warm start inside our TODOs; from `feat/m4-tutor` = v3.2; not pushed; 135 tests pass).
 - Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
 - Deadline: Sun 8 Nov 2026, 23:59.
 
@@ -2125,3 +2125,56 @@ and one test run before his own agy session.
 - v4 costs ≈ 4× v3.2's tokens: each refining design is a `simulate` turn, and the results are full candidates.
   Fewer refining designs (e.g. 1 round of 3) would cut ≈ 60k.
 - Is the template way worth that cost? v3.2 stays on `feat/m4-tutor` if you want to compare.
+
+### 2026-11-06 — 4.v4.1: `train` starts at the LLM's design (actor warm start inside our `train` TODO)
+**Goal:** Brent asked why `train` gave nothing while the warm-up did, since the warm-up should prepare the training.
+Diagnosis (v4 history): training's designs were a median 134 grid steps from the best. The untrained actor
+outputs ≈ 0 = the middle of every range (mn4 12, mp3 12, Cc 5 pF, Rc 4.6 kΩ), where the critics have no data. Brent
+chose option B.
+
+**What changed** (branch `feat/m4-template`, commit `5c8824f`; A/B run `505cac6`):
+- `CAD/sizing_tools.py` (lines 30 151 289 ): `WARM_START_STEPS = 200`, `self.warm_started_for`, `_warm_start()`. It is
+  called in `train` after the batch-size check, before `_run_steps`.
+- `tests/test_sizing_tools.py` (+2): the clone shrinks the actor's distance to the best action > 4×; the target
+  actor is a copy; no second clone for the same best; without an LLM design, no warm start.
+- `rl-tutoring` skill: the `train` paragraph.
+- Where "our TODO" is: the course file had `raise NotImplementedError("TODO: ...")` in `simulate`, `warmup`,
+  `train`, `get_status`, `_validate_parameters`, `_record` and `_run_steps`. The warm-up change is one line in our
+  `_run_steps` (the warm-up action) plus `_warmup_action` / `to_action`. The warm start is one line in our `train`
+  plus `_warm_start`. All of it sits under the header "added: the warm-up and the training start around the LLM's
+  design".
+
+**How it works:**
+- The actor is a network: state (normalized specs) → action (a whole design).
+- Behaviour cloning:
+  - for all states in the replay buffer, MSE(actor(s), to_action(best)), 200 Adam steps with the actor's own
+    optimizer (lr 3e-4), no simulations;
+  - then actor_target = actor, so TD3's target policy (TD3 paper: target networks) is consistent.
+- After the clone the actor answers "≈ the best design" for any state. A template reset (a random design, 1
+  simulation per 10 steps) only changes the state, and the next design is again near the best.
+- The critics are untouched.
+
+**Decisions:**
+- The same rule as the warm-up: only once the LLM has simulated a design; otherwise plain TD3.
+- Only when the best changed, so a second `train` call doesn't undo the learning.
+- 200 steps as in v3.2 (tested there).
+
+**Verification:**
+- 135 tests pass.
+- **A/B run** (the same seed and calls as v4, the first 113 simulations identical):
+
+  | | start of training | end of training | feasible | best |
+  |---|---|---|---|---|
+  | v4 | 145 grid steps from the best | 110 | 0 | −1.51 |
+  | v4.1 | 16 grid steps | 96 | 2 | 0.594 |
+
+  The final FoM is the same 0.678 (189 sims; refining replayed from the same state).
+
+**For Brent to check / open questions:**
+- The warm start fixes the start, but TD3 drifts away within 60 steps. Its critics have had only 60 updates and
+  their slope is unreliable, and 30 delayed actor updates follow it. The random resets show the actor unseen states.
+- Within this budget, `train` still doesn't improve the FoM.
+- Options:
+  - keep it (it doesn't hurt, gives more feasible designs, and it's honest material for the report);
+  - re-clone at every `train` call and train in short pieces (e.g. 3 × 20), which keeps pulling it back;
+  - drop `train` and spend the 66 simulations on the warm-up.

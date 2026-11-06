@@ -486,6 +486,17 @@ Then the reviewer (`get_status`). The < 200 budget is a rule in the prompts; no 
 - TD3's training adds nothing within this budget.
 - The price of the generic tools is ≈ 4× the tokens and ≈ 2× the simulations of v3.2, for a similar FoM.
 
+**Version 4.1:** `train` first pulls the actor to the best design (behaviour cloning inside our `train` TODO, no
+simulations). It answers the question why the warm-up helped and the training didn't: the untrained actor outputs
+the middle of the grid, 134 grid steps from the LLM's design, where the critics have no data. A/B run with the same
+seed and calls (`CAD/harness/sessions/2026-11-06_claude-code-template-warmstart/`):
+- training now starts at the design: 16 grid steps instead of 145;
+- it drifts away within 60 steps (96 grid steps), because the critics' slope is still unreliable after 60 updates;
+- 2 instead of 0 feasible designs, the same final FoM 0.678.
+
+TD3 needs far more than 60 steps (milestone 3: thousands of simulations); within the 200 budget, the gains come from
+the warm-up around the LLM's design and from the LLM's refining.
+
 ---
 
 ## Tests overall
