@@ -2487,3 +2487,29 @@ different centre:
 - Where RL 1 already found a good design (seed 2, 0.599), the margin rule made the LLM step useless (0.570).
 - So: margin first when the RL's best is weak or pinned on a spec; FoM first when it already meets everything with
   margin.
+
+### 2026-11-06 — 4.v4.1: three seeds, round 3 (B)
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-3seeds-B/`.
+
+**Changes from round 2:**
+- the adaptive goal in the LLM step;
+- the Cc rule in the skill;
+- `warmup(200)` in phase 2;
+- a polish `warmup(50)`.
+
+**Result:**
+
+| seed | final FoM | design |
+|---|---|---|
+| 123456 | 0.664 | 291 µA, 583 µm² |
+| 1 | 0.452 | 267 µA, 1087 µm² |
+| 2 | 0.694 | 235 µA, 714 µm² |
+| **mean** | **0.603 ± 0.132** | round 1: 0.489 ± 0.127; round 2: 0.539 ± 0.178 |
+
+Tokens: 16–20 requests, 376–483k cache read per session.
+
+**Interpretation:**
+- Every new element contributed somewhere: the polish (+0.05, seed 123456), the final LLM step (+0.03 / +0.02, it
+  found the final design in 2 of 3 runs), the bigger warm-up (+0.11, seed 2).
+- Seed 1 is still weak: its first LLM step kept Cc at 5–6 pF, because the margin goal overrode the Cc rule.
+- Several changes at once, so the contributions are per-seed observations, not an ablation.
