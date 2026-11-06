@@ -1580,3 +1580,43 @@ is a SyntaxError before Python 3.12 (the student server has 3.9; the earlier `as
 - The episode column of `designs.csv` is now 0 in every row (nothing reads it).
 
 **Pushed:** branch `einstein_LLM` = `feat/m4-harness` (milestones 3 + 4 on top of `main`).
+
+### 2026-11-06 12:20 — 4.H1: harness v2, the backend: `hybrid_tools.py` (LLM designs warm-start the RL)
+**Goal:** Brent: redo the harness for minimal tokens, with the LLM's simulations combined with short RL bursts.
+Plan: `~/.claude/plans/streamed-sauteeing-moonbeam.md`. Branch `feat/m4-hybrid` from `einstein_LLM`.
+
+**Brent's choices:**
+- warm-start + local RL;
+- 3 agents + a thin orchestrator;
+- a new file (`sizing_tools.py`/`mcp_server.py` untouched);
+- the total budget is 100–200 simulations, so ~30-simulation RL bursts alternating with a few LLM simulations.
+
+**What changed:** new `CAD/hybrid_tools.py`, `HybridExperiment(SizingExperiment)`.
+- **`to_action(params)`:** the exact inverse of `action_refine` (grid index k ↦ a = min((2k+1)/(n−1) − 1, 1); all 432
+  grid points checked). `state_of(candidate)` = its normalized specs in the env order.
+- **`simulate(parameters | changes, base, reason)`:**
+  - a full design, or only the changes relative to the best or to an earlier simulation (fewer output tokens);
+  - every successful simulation is **pushed as a TD3 transition** (s = the base design's state, a = `to_action`,
+    r = its FoM, s′ = its state);
+  - failed simulations are not pushed.
+- **`rl_explore(n ≤ 60, reason)`, one burst:**
+  - the **actor is warm-started** (200 Adam steps on MSE(actor(s), a_best), then actor → target actor) whenever the
+    best design changed;
+  - every **episode starts at the current best design** (no reset simulation);
+  - n steps = n simulations, each with one TD3 update;
+  - there's **no random warm-up**: `ReplayBuffer.sample` draws with replacement, so the template's batch size of 100
+    works from the first step;
+  - the template hyperparameters are unchanged;
+  - it reports what RL changed relative to the previous best (~550 bytes).
+- **`log_entry(agent, text)`:** the server appends a numbered entry (≤ 1200 characters) to `harness/design_log.md`,
+  so the orchestrator never writes files.
+- New `CAD/tests/test_hybrid_tools.py` (14 tests): the inverse on all grids, simulate by changes / base / invalid
+  calls / first design in full, one transition per simulation (its action maps back, reward, next state), failed →
+  none, burst bounds, a burst = n sims/transitions/updates with < batch_size transitions and no reset, episodes start
+  at the best, the warm start (the actor moves to a_best, only once per best, target copied), the log.
+
+**Verification:**
+- Mutation check: 4 deliberate bugs (no push, a wrong inverse, a wrong episode start, no target copy) are each caught.
+- Real ngspice: TA reference 1 matches (reward −0.2533 vs TA −0.2528); a change works; **a 20-simulation burst from
+  that design found 3 improvements, the best +0.309** (from −0.253). The smoke run's folders were removed.
+- All 144 tests pass.
