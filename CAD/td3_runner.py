@@ -14,8 +14,8 @@ def readParser():
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed (default: 123456)')
 
-    parser.add_argument('--noise_sigma', type=float, default=0.1,
-                        help='fixed noise sigma added to the deterministic action (default: 0.1, TD3 paper)')
+    parser.add_argument('--noise_sigma', type=float, default="0.1",
+                        help='fixed noise sigma added to the deterministic action')
 
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                         help='discount factor for reward (default: 0.99)')
@@ -32,28 +32,27 @@ def readParser():
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     
-    parser.add_argument('--batch_size', type=int, default=128, metavar='N',
-                        help='mini-batch size per update (default: 128)')
+    parser.add_argument('--batch_size', type=int, default="64", metavar='N',
+                        help='hidden size')
     
-    # tuned (work log 3.5, 3 seeds per setting): w 1000 + pi_lr 1e-4 had the best mean best-FoM within 5000 sims
-    parser.add_argument('--w', type=int, default=1000, metavar='N',
-                        help='number of warmup steps with random actions (default: 1000, ~22 %% of the 5000 sims)')
+    parser.add_argument('--w', type=int, default="200", metavar='N',
+                        help='number of warmup steps')
     
     parser.add_argument('--T', type=int, default=10_000, metavar='N',
                         help='total training steps (default: 10_000)')
 
     # CHANGED (not in the course runner): the assignment compares with the baseline within 5k SIMULATIONS and asks for
-    # the Pareto solutions after 5k simulations (no hard cap is stated). One episode is 1 reset
-    # simulation + 10 step simulations, so --T 10_000 steps would be 11_000 simulations. Training stops at whichever
-    # comes first, --T steps or --max_sims simulations. To go back to the course behaviour: --max_sims 1_000_000.
+    # the Pareto solutions after 5k simulations (no hard cap is stated). One episode is 1 reset simulation + 10 step
+    # simulations, so --T 10_000 steps would be 11_000 simulations. Training stops at whichever comes first, --T steps
+    # or --max_sims simulations, also in the middle of an episode. To go back to the course behaviour: --max_sims 1_000_000.
     parser.add_argument('--max_sims', type=int, default=5000, metavar='N',
                         help='simulation budget: stop after this many ngspice simulations (default: 5000)')
     
-    parser.add_argument('--pi_lr', type=float, default=1e-4, metavar='G',
-                        help='actor learning rate (default: 1e-4, tuned)')
+    parser.add_argument('--pi_lr', type=float, default="3e-4", metavar='G',
+                        help='learning rate')
     
-    parser.add_argument('--q_lr', type=float, default=1e-3, metavar='G',
-                        help='critic learning rate (default: 1e-3)')
+    parser.add_argument('--q_lr', type=float, default="1e-3", metavar='G',
+                        help='learning rate')
 
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
@@ -82,7 +81,8 @@ def train(args, env, agent, env_pool):
             # clean up the no_backup folder every 100 steps
             if total_steps % 100 == 0:
                 os.system('./clean.sh')
-                print(f'steps {total_steps}, simulations {env.counter}, best reward {max(env.reward_history, default=float('nan')):.3f}')
+                best = max(env.reward_history, default=float("nan"))
+                print(f'steps {total_steps}, simulations {env.counter}, best reward {best:.3f}')
 
 
 
@@ -101,8 +101,8 @@ def warmup_exploration(args, env, env_pool, agent):
 
 
 def train_policy(args, env_pool, agent, total_steps):
-    state, action, reward, next_state, done = env_pool.sample(args.batch_size)
-    batch = (state, action, reward, next_state, done)
+    state, action, next_state, reward, not_done = env_pool.sample(args.batch_size)
+    batch = (state, action, next_state, reward, not_done)
     agent.update_parameters(memory_batch=batch, update=total_steps)
 
 
@@ -134,7 +134,8 @@ def main(args=None):
     # CHANGED: the last plots (Pareto front) and the trained networks
     env.finalize()
     agent.save(os.path.join(env.run_folder, 'td3'))
-    print(f'done: {env.counter} simulations, best reward {max(env.reward_history, default=float('nan')):.3f}, run folder {env.run_folder}')
+    best = max(env.reward_history, default=float("nan"))
+    print(f'done: {env.counter} simulations, best reward {best:.3f}, run folder {env.run_folder}')
 
 
 if __name__ == "__main__":

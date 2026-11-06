@@ -211,7 +211,6 @@ class CircuitEnv(gym.Env):
         """
         #reset the environment and set the seed for reproducibility
         super().reset(seed=seed)
-        self.episode += 1
         #1. Initialize the episode steps counter to zero
         self.episode_steps = 0
         #2. Generate a random action within the range [-1, 1] for each action parameter
