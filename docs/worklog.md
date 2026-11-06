@@ -2690,3 +2690,30 @@ Record: `CAD/harness/sessions/2026-11-06_agy-rl-first-seed3/` (commit `36a8fa6`)
 - the three agy v4 transcripts (committing files from `~/.gemini` was blocked);
 - the TAs' `.so` files;
 - `Solutions/` (an open decision).
+
+### 2026-11-06 — 4.v4.1: `sizing_tools.py` cleanup (identical behaviour)
+**Goal:** Brent: as human-readable as possible with identical functionality. The template's suggested steps should
+be marked as in `td3/agent.py`.
+
+**What changed** (branch `best_harnass`):
+- **The 7 template TODO methods** (`simulate`, `warmup`, `train`, `get_status`, `_validate_parameters`, `_record`,
+  `_run_steps`):
+  - the template's docstring is kept verbatim, plus "TODO (course template): …";
+  - the template had no numbered steps (only one-line TODOs plus requirement sentences in its docstrings), so those
+    requirements are written as "Steps to implement: 1. … 2. …";
+  - the same numbers mark the code (`# 1 …`), exactly as in `agent.py`.
+- **Our additions** under clear `added` headers: compact results, the warm-up and warm start, `to_action`, the
+  history log, `_clean`.
+- **Two small helpers** for expressions that appeared twice: `_llm_has_simulated()`, `_best_candidate()`.
+- `compact`'s lambda is now a named inner function.
+- The template's lines (imports incl. the unused `deepcopy`, `__init__`, the hyperparameters) are unchanged.
+
+**Verification:**
+- 135 tests pass.
+- A 7-call sequence with real ngspice (seed 7, batch 20: uniform warm-up, plain TD3, `simulate`, warm-up around the
+  best, warm-started TD3, a refused call, `get_status`) on the old and the new file gives identical tool results,
+  an identical `warm_started_for` and an identical `harness_history.csv` (89 rows, all columns but time and netlist
+  file name).
+
+**Solutions/:** Brent chose Lukas's own best run. It is not in the repo, so it waits for Lukas's files. Then: check
+that its front lies within 5000 sims, make the `wrdata` paths portable, re-simulate, add it.
