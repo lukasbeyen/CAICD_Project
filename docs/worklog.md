@@ -2531,3 +2531,16 @@ not be hardcoded into later runs: that would be cheating. Saved as a standing ru
 - the simulation counts were tuned on seeds 123456 / 1 / 2, so the final evaluation belongs on fresh seeds.
 
 **Round 3's `warmup(200)`:** draws 101–200 added +0.019 / +0.037 / +0.076 (seed 2's whole warm-up gain came there).
+
+### 2026-11-06 — 4.v4.1: fresh evaluation seeds 3, 4, 5 prepared
+**Why:** the flow and its simulation counts were tuned on seeds 123456 / 1 / 2. The honest result is the frozen
+harness on seeds never used for tuning.
+
+**What:**
+- `~/harness_lanes/s3`, `s4`, `s5`: rsync copies of `CAD/` at `908d8a6` (the warm start, the cleaned general-only
+  skills), without runs or sessions. Verified identical to the repo for `sizing_tools.py`, `mcp_server.py`,
+  `AGENTS.md`, the skills and `tutor.md`.
+- A check without ngspice: the copy's server starts with `--seed 3` and offers the 4 tools; seed 3 twice gives the
+  same random actions, seed 4 different ones.
+- The prompt: the cleaned general version (trade-off instead of "≥ 10 % margin", a judgement stop instead of 3 %,
+  `get_status(10)`, FoM reasoning in each `reason`).
