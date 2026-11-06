@@ -2279,3 +2279,29 @@ v3.2's agy session: 58.8k + 207.5k + 13.2k.
 - budget the current in the nominal: 30 µA + I_tail + I2 ≈ the 200 µA target;
 - refining spends its moves on the larger FoM term (z_current vs z_area);
 - the reviewer reports the counters from `get_status`.
+
+### 2026-11-06 — 4.v4 experiment: RL 1000 → LLM refine → RL 1000 → LLM refine
+**Goal:** Brent: ≈ 1000 RL simulations first, then a bit of LLM reasoning, twice; see where it ends up.
+
+**What:**
+- The course's tools, the current v4 code (no actor warm start), seed 123456. Claude Code did the two LLM steps
+  (5 `simulate` each) by the tutor's refining rules.
+- Each RL phase = `warmup(100)` + `train(800)`. The warm-up is the only channel from a `simulate` design to the RL.
+- Record: `CAD/harness/sessions/2026-11-06_experiment-rl-llm-x2/` (commit `4ef6eaa`). No code change.
+
+**Result** (1990 simulations, 8.2 min, 447 feasible):
+- RL 1: best −0.025 (a near-miss: SR 29.8 V/µs, 589 µA, Cc 4.4 pF); 6 feasible in 990 sims.
+- LLM 1: −0.025 → **0.193**:
+  - Cc 4.4 → 2.5 pF (SR ≈ I_tail/Cc, area);
+  - balanced cuts of I_tail (mn4 + mp1) and I2 (mn5 + mp3).
+- RL 2: the warm-up around 0.193 climbs to **0.674** within 74 draws (4.2 min). `train(800)`: the median reward
+  −0.03 → 0.32 and 387/800 feasible; best **0.676**.
+- LLM 2: no gain (UGBW binding at +2 %; every current cut fails it).
+- Final 0.6756: 273 µA, 615 µm².
+
+**Interpretation:**
+- TD3 alone is slow: phase 1 found almost nothing feasible.
+- One small LLM step turns its near-miss into a feasible design.
+- The warm-up then climbs fast from there. With a good region in its buffer, TD3 learns visibly.
+- Compared with milestone 3's TD3 alone: 0.684 after 3724 sims / 13.3 min on its best seed; this run reached 0.674
+  after 1069 sims / 4.2 min.
