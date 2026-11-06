@@ -388,18 +388,35 @@ set up the RL's job, and the RL optimizes.
 |---|---|---|---|---|
 | v1 (LLM designs) | ≈ 244k | 16 | 0.684 | the LLM |
 | v2 (LLM + RL bursts) | ≈ 126k | 97 | 0.677 | the LLM |
-| **v3 (LLM tutors the RL)** | **≈ 30k** | 146 | 0.650 | the RL |
+| v3 (LLM tutors the RL) | ≈ 30k | 146 | 0.650 | the RL |
+| **v3.1 (+ `refine` between two RL runs)** | **≈ 46k** | **199** | **0.686** | **the LLM's refine, after the RL** |
 
 **Reading:**
 - v3 is 8× cheaper in tokens, and the RL really optimizes in a space the LLM made well-conditioned, which gives many
-  feasible designs.
-- It costs more simulations and ends slightly below the LLM-only best.
-- A feasibility check (T0, Python only) gave 0.658 / 0.664 from a better nominal.
+  feasible designs. It costs more simulations and ends slightly below the LLM-only best.
+
+**Version 3.1** (the same branch): the tutor calls `run_rl` twice, with **one educated improvement** in between:
+- `refine`: 1–5 reasoned designs relative to the best, and optionally a re-centred search space (the replay buffer
+  keeps the designs inside it, with re-encoded actions);
+- a **hard budget of 199 simulations** in the code.
+
+Test run (`CAD/harness/sessions/2026-11-06_claude-code-tutor2/`), with the same setup as v3:
+- `setup_rl` → 0.606;
+- RL run 1 (80 sims) → 0.646;
+- **`refine` → 0.686**: Cc 0.3 pF together with an I2 cut, a coupled move. The cut alone fails UGBW; Cc's UGBW gain
+  makes it pass. The RL hadn't found it;
+- RL run 2 (98 sims) → no further gain, because the design sits on the PM and UGBW limits;
+- **199 simulations, 7 tool calls, ≈ 46k input tokens**;
+- **the best FoM of all versions**, at about a fifth of v1's tokens.
+
+**The division of labour that works:**
+- the LLM sets up the space and the warm-up and makes the circuit-level coupled move;
+- the RL does the local search and supplies many feasible alternatives (124 of 177 designs met all specs).
 
 ---
 
 ## Tests overall
-`cd CAD && python -m pytest -q`: **157 passed** (branch `feat/m4-tutor`):
+`cd CAD && python -m pytest -q`: **161 passed** (branch `feat/m4-tutor`):
 
 | file | tests |
 |---|---|
@@ -415,5 +432,5 @@ set up the RL's job, and the RL optimizes.
 | `test_mcp_server.py` | 1 |
 | `test_hybrid_tools.py` | 14 |
 | `test_hybrid_mcp_server.py` | 1 |
-| `test_tutor_tools.py` | 11 |
+| `test_tutor_tools.py` | 15 |
 | `test_tutor_mcp_server.py` | 1 |
