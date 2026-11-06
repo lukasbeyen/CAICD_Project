@@ -1474,3 +1474,34 @@ first simulation comes after 6.3 min of analysis).
   `Solutions/` netlists, the proposed harness prompt tweaks (not done, so the report describes the harness as it
   ran), the merge to `main`.
 - Note: `docs/worklog_detailed_2026-11-05.md` is an older private snapshot (milestones 1–2); this work log is complete.
+
+### 2026-11-06 11:20 — 4.7: test run: Claude Code plays the harness (no agy tokens); token measurement
+**Goal:** Brent: run the whole harness workflow without agy and report the token usage.
+
+**How:** Claude Code played the orchestrator and the 4 subagents as written in `AGENTS.md` and `.agents/agents/`.
+It called the real backend through a persistent driver (scratchpad) that behaves like the MCP server and logs the
+bytes of every tool request and result. Seed 123456. **Not an independent replicate** (the operator had seen the agy
+log). Record: `CAD/harness/sessions/2026-11-06_claude-code-test/` (README with the compact log, the history, the sizes).
+
+**Result:**
+- **10 `simulate` calls** (+1 off-grid request rejected by the validation) → FoM **0.660** (215 µA, 864 µm², PM 65.9°,
+  UGBW 101.8 MHz). All specs were met at sim 4 (FoM 0.638).
+- vs agy: a slightly lower FoM (0.684) but 10 instead of 16 sims and a PM margin of 5.9° instead of 0.6°.
+- Model insights in the log:
+  - UGBW ∝ I_tail;
+  - Cc mainly sets PM;
+  - Rc and gm6 set UGBW through the LHP zero;
+  - **the dominant area item is Rc (9.8 kΩ ≈ 700 µm²), not Cc**, which corrects the agy reviewer.
+- **The RL path, first test inside the harness, a labelled demonstration:** warmup 200 + train 2 × 150 = 550 sims, 0
+  designs meeting all specs (best −0.187). This confirms "RL not needed" and the stage-C finding (TD3 with the
+  template's short-warm-up settings is weak).
+
+**Tokens** (an agy estimate: the measured tool traffic plus a turn model where every turn rereads its agent's context;
+agy's own system prompt and tool schemas are not included):
+- ≈ 248k input + 13k output tokens;
+- the orchestrator ≈ 115k input: many turns rereading its growing context;
+- `AGENTS.md` reread in ~30 turns ≈ 47k;
+- tool results 50 kB (`get_status(20)` 20 kB, `warmup`/`train` 5.5 kB, `simulate` ~0.95 kB).
+
+Claude Code's own usage can't be read from inside the session, and isn't comparable: every call rereads this very long
+conversation.
