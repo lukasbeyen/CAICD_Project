@@ -2630,3 +2630,18 @@ writes about twice the output (15k vs 8k).
 - LLM first is better anytime (a good design after ~200 sims) and far more consistent.
 - RL first has the higher peaks and the cheaper reasoning.
 - In LLM first, train 1 (warm start) gave +0.03 to +0.12, and train 2 adds little.
+
+### 2026-11-06 — 4.v4.1: the final flow in agy (preparation)
+**Why:** milestone 4 asks for agy. The final flows were evaluated in Claude Code; the only agy result was the old v4
+session (0.490: `tutor.md`'s < 200 flow, `train(60)` without the warm start, a failing hand design at 370 µA).
+
+**What:**
+- `CAD/harness/prompts/rl_first_final_agy.txt` (commit in this step): `rl_first_final.txt` + one operational
+  sentence, no subagents. That saves agy's per-subagent overhead (32 calls in the old session).
+- The seed-3 lane prepared for agy:
+  - its old runs, `solutions/` and `output_figs/` moved to `~/harness_lanes/archive_s3_runs/`; `no_backup/` emptied;
+  - its `.agents/mcp_config.json` now starts the lane's own `mcp_server.py --seed 3` (cwd the lane,
+    `timeoutSeconds` 900). It still pointed at the repo's server, which would have run with seed 123456 in the
+    repo.
+- Brent expects agy's quota to run out. Every simulation is in `harness_history.csv` at once, so a partial run is
+  still reportable.
