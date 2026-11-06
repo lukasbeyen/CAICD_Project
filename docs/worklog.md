@@ -1908,3 +1908,28 @@ simulations).
 
 **Result** (derived: v3.1's run has exactly this session as its first 101 simulations, deterministic): **FoM 0.686 in
 101 simulations, ≈ 39k input tokens, 14 turns** (v3.1: 199 sims, ≈ 46k). All 160 tests pass.
+
+### 2026-11-06 14:00 — 4.T9: the first real agy session of harness v3.2 (Claude Sonnet 4.6): no design met all specs
+**Record:** `CAD/harness/sessions/2026-11-06_agy-claude-sonnet/` (README, the stream, both subagent transcripts, the
+design log, the history). Failed attempts in `failed_attempts/`:
+- interrupted;
+- **the Gemini quota is exhausted** (resets in ~144 h, after the deadline);
+- `--effort` isn't supported for `claude-sonnet-4-6`.
+
+**Result:**
+- 101 simulations, 249 s, but **no design met all specs**: best −0.68 (UGBW 38 MHz, PM 35°).
+- The tutor anchored on the netlist's placeholder `.param` values: W fixed at 0.5 µm, Cc 2 pF against its own GBW
+  estimate, Rc 1.5 kΩ.
+- **It fenced the RL in:** Cc 1–3 pF, Rc 0.5–2 kΩ, which excludes the region where all specs are met (Cc 0.3–0.5 pF,
+  Rc ≈ 9–10 kΩ).
+- The RL and `refine` improved inside the fence (−0.89 → −0.77 → −0.68).
+- The reviewer wrongly called the UGBW target "fundamentally unreachable".
+- Start from scratch: checked, no earlier results were read.
+
+**Tokens (agy's counts):**
+- input 58.8k + cached 207.5k + output 13.2k (orchestrator 14.5k/41.1k/1.8k, tutor 29.7k/126.9k/9.9k, reviewer
+  14.7k/39.6k/1.5k);
+- the ≈ 39k estimate missed agy's own system prompt and tool definitions (≈ 10k per call).
+
+**Lesson:** in v3 everything depends on the tutor's setup. A bad nominal and a fenced search space can't be repaired
+by the RL. My own test runs were optimistic, because Claude Code played the tutor knowing the earlier sessions.
