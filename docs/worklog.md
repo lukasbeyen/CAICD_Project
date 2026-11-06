@@ -2348,3 +2348,20 @@ committing): `sizing_tools.py`, `tests/test_sizing_tools.py` and the `rl-tutorin
 **Controlled replay** (running): the fresh session's exact calls (`b62fd8b`) with the warm start. The first 1095
 simulations are identical, so only phase 2's `train(800)` differs. That isolates the warm start's effect. Brent's
 run with 1000 steps changes phase 1 too, so it can't isolate it by itself.
+
+### 2026-11-06 — 4.v4.1: the controlled replay (the warm start in phase 2)
+**Record:** `CAD/harness/sessions/2026-11-06_experiment-warmstart-replay/`. The fresh session's exact calls with the
+warm start; the first 1106 simulations are identical.
+
+**Result:** phase 2's `train(800)`:
+
+| | best | gain | better designs | first at step | feasible |
+|---|---|---|---|---|---|
+| without the warm start | 0.601 | +0.004 | 1 | 617 | 394 |
+| **with the warm start** | **0.648** | **+0.051** | **8** | **7** | 336 |
+
+Final 0.6475 (343 µA, 483 µm²).
+
+**Interpretation:** the warm start makes the second RL phase effective. TD3 starts at the LLM-refined region instead
+of where phase 1's actor left off. It costs 0 simulations and 0 tokens. One seed, but a clean A/B (only that line
+differs).
