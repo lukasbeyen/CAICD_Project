@@ -415,6 +415,30 @@ one RL run (the tutor judges its size, 60–100) → `refine` → end. The same 
 tokens** (derived from v3.1's first 101 simulations, which are exactly this session). `refine`'s optional re-centred
 space was removed with the second run.
 
+**The first real agy session of v3.2** (Claude Sonnet 4.6, `CAD/harness/sessions/2026-11-06_agy-claude-sonnet/`):
+- 101 simulations and 249 s, but **no design met all specs** (best −0.68: UGBW 38 MHz, PM 35°).
+- **Why:** the tutor anchored on the netlist's placeholder `.param` values (W fixed at 0.5 µm, Cc 2 pF against its own
+  GBW estimate, Rc 1.5 kΩ) and **fenced the RL in** (Cc 1–3 pF, Rc 0.5–2 kΩ). The region that meets the specs was
+  unreachable, and the reviewer didn't question it. In v3, the tutor's setup is a single point of failure, and the
+  trace shows exactly where it went wrong: a good explainability example.
+- **Tokens** (agy's counts): 58.8k input + 207.5k cached input + 13.2k output. Most of it is agy's own system prompt
+  and tool definitions, which are reread on every call.
+
+**Prompt fixes** (circuit knowledge only):
+- the netlist values are placeholders;
+- check the nominal with your own equations before `setup_rl`;
+- the space must contain what the equations demand (sub-pF Cc, Rc of several kΩ);
+- the reviewer questions the space if nothing meets the specs.
+
+A disciplined test run afterwards (Claude Code following only the prompt files, values derived from the equations;
+`CAD/harness/sessions/2026-11-06_claude-code-fresh/`):
+- the nominal misses only UGBW (87.8 MHz);
+- the warm-up meets all specs (0.656);
+- RL (80) → **0.669**;
+- refine: no gain, because its moves were derived from the nominal's sensitivities, which had shifted;
+- 101 simulations.
+- A second real agy session with the fixed prompts is still to be run.
+
 **The division of labour that works:**
 - the LLM sets up the space and the warm-up and makes the circuit-level coupled move;
 - the RL does the local search and supplies many feasible alternatives (124 of 177 designs met all specs).
