@@ -2244,3 +2244,38 @@ in `harness/sessions/` as experiments; their READMEs say they used the warm star
 **Verification:** 133 tests pass; `git diff 3d85360 HEAD` on the code and the prompts is empty.
 
 **For Brent:** the harness is v4 as tested: FoM 0.678, 189 sims, ≈ 165k tokens (turn model).
+
+### 2026-11-06 — 4.v4: the real agy session (Brent, Claude Sonnet 4.6)
+**Record:** `CAD/harness/sessions/2026-11-06_agy-claude-sonnet-v4/` (README + history committed in `1933d51`). The
+3 agy transcripts are copied there but **not committed**: the permission check blocked committing files from
+`~/.gemini`; Brent decides.
+
+**Checks:**
+- Start from scratch: passed (the skills, the netlist, agy's own MCP tool-definition files).
+- 191 simulations (< 200), 0 failed, 5.8 min. Pipeline main → tutor → reviewer.
+
+**Result: FoM 0.490.**
+
+| phase | simulations | best |
+|---|---|---|
+| hand phase | 10 | −0.218, never all specs |
+| `warmup(100)` | 110 | 0.337 (7 feasible, all ≈ 450 µA) |
+| `train(60)` | 66 | nothing |
+| refining | 5 | 0.490 (Cc and Rc for area) |
+
+The final design: current 452 µA, area 538 µm², PM +2.5 %.
+
+**Tokens (agy):** 32 model calls; 85.2k input + 628.7k cached + 17.0k output (tutor: 24 calls, 572.6k cached).
+v3.2's agy session: 58.8k + 207.5k + 13.2k.
+
+**Why low:**
+- The tutor never budgeted the current. mn3 = 1 finger makes the mirror ratios large, so the hand designs drew
+  305–629 µA.
+- The warm-up searched around a ≈ 450 µA design, and the refining only reduced the area.
+- Rules broken: 10 hand sims instead of ≤ 6; a failing design handed over; the returns misreport the hand count;
+  the reviewer says "RHP zero".
+
+**For Brent:** possible prompt fixes (circuit knowledge only):
+- budget the current in the nominal: 30 µA + I_tail + I2 ≈ the 200 µA target;
+- refining spends its moves on the larger FoM term (z_current vs z_area);
+- the reviewer reports the counters from `get_status`.
