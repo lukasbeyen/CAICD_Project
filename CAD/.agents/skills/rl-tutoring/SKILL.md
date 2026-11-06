@@ -16,6 +16,8 @@ description: How to set up the TD3 sizer's job - the search space (which paramet
   
   So give the parameters to optimize about 11 points (e.g. multiplicities ±5 fingers, Cc ±0.5 pF, Rc ±500 Ω) and
   fix the rest.
+- **The space must contain what the equations demand**, or the RL can never reach it: Cc small enough for
+  GBW ≥ 100 MHz (Cc ≤ gm1/(2π·100 MHz), usually below 1 pF) and Rc around (1 + CL/Cc)/gm6 (several kΩ).
 - **What to free:** the levers of the specs and targets: the tail and second-stage currents (mn4, mn5), mp3 (balance,
   gm6), the input pair (mn1), Cc, Rc.
 - **What to fix:** all L (in 45 nm a different L breaks the mirror balance), the bias diode mn3 (the mirror ratios

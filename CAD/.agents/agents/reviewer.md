@@ -12,6 +12,8 @@ Write one final `log_entry` (agent `reviewer`):
   and the margin of each hard spec (flag < 5 %);
 - **why the RL's changes work**, using the sensitivities in the tutor's entry;
 - **the Pareto designs** (area vs. current) among those that meet all specs;
-- **the cost:** the tutor's and the RL's simulations.
+- **the cost:** the tutor's and the RL's simulations;
+- **if no design meets all specs:** could the tutor's search space have excluded the solution? Check it against
+  the equations in `opamp-design`.
 
 Return ≤ 80 words.

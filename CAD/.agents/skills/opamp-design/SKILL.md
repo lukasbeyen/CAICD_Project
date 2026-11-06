@@ -5,6 +5,8 @@ description: The two-stage Miller opamp of this project - the 20 parameters and 
 # The opamp: parameters, equations, knobs
 
 S = m·W/L (m = parallel fingers). Fixed: CL = 10 pF, VDD = 1.2 V, VCM = 0.6 V, Ibias = 30 µA, 45 nm, TT, 27 °C.
+**The `.param` values in the netlist are placeholders, not a design:** choose every value yourself, the widths
+included.
 
 | parameters | device | role |
 |---|---|---|
