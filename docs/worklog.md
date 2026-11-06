@@ -2463,3 +2463,27 @@ The stop rule was applied correctly in all three. Train 2 with the warm start he
 **Next idea (prompt only):** in the LLM step, move Cc boldly into the region the equations demand
 (Cc ≈ gm1/(2π·100 MHz), usually 0.5–1 pF), re-tuning Rc and the currents. Keep the 10 % margin rule for the other
 moves. The `rl-tutoring` skill lost the sub-pF sentence in the v4 rewrite.
+
+### 2026-11-06 — 4.v4.1: the Cc sentence back in the skill; was the margin rule useful?
+**What changed:**
+- `CAD/.agents/skills/rl-tutoring/SKILL.md` (commit `a2a41c6`): "Cc is the largest area lever (≈ 333 µm²/pF); the
+  noise moves it only ≈ ±0.5 pF per draw. The equations demand Cc ≈ gm1/(2π·100 MHz), usually 0.5–1 pF. If Cc is
+  above ≈ 1 pF, move it there in one step, re-tuning Rc ≈ (1 + CL/Cc)/gm6 and I_tail ≥ 30 V/µs · Cc."
+- Copied into the three lanes. 135 tests pass (within the 3500 B skill budget).
+
+**Margin vs. FoM in the first LLM step:** seed 123456 has 4 runs with an identical RL 1 (990 sims, verified).
+`simulate` doesn't consume the env's random numbers, so their second warm-ups even draw the same noise, around a
+different centre:
+
+| run | hand-over | min margin | warm-up 2 | final |
+|---|---|---|---|---|
+| my x2 (no warm start) | 0.193 | 12.5 % | 0.674 | 0.676 |
+| fresh 1 (no warm start) | 0.333 | 2.9 % (UGBW) | 0.597 | 0.601 |
+| its replay (warm start) | 0.333 | 2.9 % | 0.597 | 0.647 |
+| round 2 (warm start) | 0.086 | 12.7 % | 0.601 | 0.671 |
+
+- With equal warm-start settings, the margin hand-overs ended higher: +0.075 without the warm start, +0.024 with it.
+  Small numbers, but consistent.
+- Where RL 1 already found a good design (seed 2, 0.599), the margin rule made the LLM step useless (0.570).
+- So: margin first when the RL's best is weak or pinned on a spec; FoM first when it already meets everything with
+  margin.
