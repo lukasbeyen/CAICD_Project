@@ -1933,3 +1933,26 @@ design log, the history). Failed attempts in `failed_attempts/`:
 
 **Lesson:** in v3 everything depends on the tutor's setup. A bad nominal and a fenced search space can't be repaired
 by the RL. My own test runs were optimistic, because Claude Code played the tutor knowing the earlier sessions.
+
+### 2026-11-06 14:25 — 4.T10: the prompt fixes after the first agy session + a disciplined test run
+**Fixes** (`c60508e`, `372f6bb`; circuit knowledge, no results):
+- `opamp-design`: "the netlist's `.param` values are placeholders; choose every value, the widths included";
+- `tutor.md`: "check the nominal with your own equations; if a hard spec misses by > 2×, fix it" before `setup_rl`;
+- `rl-tutoring`: "the space must contain what the equations demand: Cc ≤ gm1/(2π·100 MHz) (usually < 1 pF), Rc around
+  (1 + CL/Cc)/gm6 (several kΩ)";
+- `reviewer.md`: "if no design meets all specs: could the space have excluded the solution?".
+
+**A process slip:** `c60508e` was committed while `test_harness_files` failed (`tutor.md` 1 byte over its budget); it
+was fixed in `372f6bb`. Commits now happen only if pytest is green (checked in the commit command).
+
+**Test run** (`CAD/harness/sessions/2026-11-06_claude-code-fresh/`; Claude Code played the agents following only the
+prompt files, every value derived from the skill's equations; a disciplined replay, not an independent agent):
+- the nominal from the equations misses only UGBW (87.8 MHz);
+- the warm-up: mn4 +1 → all specs met (0.656);
+- RL (80) → **0.669**;
+- refine (5): no gain. The current cuts fail, because the sensitivities measured at the nominal (mn5 −1: −2.8 % UGBW)
+  had shifted at the RL's best (−8.6 %);
+- **101 simulations, FoM 0.669**, 21 of 92 designs met all specs.
+
+**Lesson:** with the fixes, the tutor's equations alone (no knowledge of earlier results) lead to a nominal that
+almost meets the specs. The RL does the last step. `refine` helps only if its move is still valid at the new design.
