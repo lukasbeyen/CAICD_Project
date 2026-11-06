@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 from circuit_env import CircuitEnv
@@ -26,6 +27,7 @@ SPEC_UNITS = {
     "phm": "deg", "slewRate": "V/us", "ugbw": "Hz",
 }
 MAX_STEPS_PER_CALL = 1000
+WARM_START_STEPS = 200  # added: Adam steps that pull the actor to the best design before training (no simulations)
 
 
 def to_builtin(value):
@@ -106,6 +108,7 @@ class SizingExperiment:
         self.history_path = os.path.join(self.env.run_folder, "harness_history.csv")
         self.first_reset = True  # the first episode reset is seeded, like td3_runner seeds env.np_random
         self.calls_at_last_clean = 0
+        self.warm_started_for = None  # added: the parameters of the best design the actor was last pulled towards
 
     def simulate(self, parameters: dict[str, float], reason: str = "") -> dict:
         """Evaluate one complete physical-parameter dictionary on the YAML grid.
@@ -145,6 +148,7 @@ class SizingExperiment:
         if self.replay.size < self.batch_size:
             raise ValueError(f"train needs at least batch_size = {self.batch_size} experiences in the replay buffer, "
                              f"it has {self.replay.size}: call warmup first.")
+        self._warm_start()  # added: training starts at the LLM's best design, not in the middle of the grid
         return self._run_steps(n_steps, training=True, reason=reason)
 
     def get_status(self, k: int = 5) -> dict:
@@ -271,7 +275,7 @@ class SizingExperiment:
                        "updates_performed": self.updates - updates_before})
         return status
 
-    # ---------- added: the warm-up around the LLM's design ----------
+    # ---------- added: the warm-up and the training start around the LLM's design ----------
 
     def _warmup_action(self):
         """A random warm-up action: uniform over the grid, or, once the LLM has simulated a design, around the best
@@ -281,6 +285,27 @@ class SizingExperiment:
         best = max(self.candidates.values(), key=lambda candidate: candidate["reward"])
         noise = self.env.np_random.normal(0, self.agent.expl_noise, self.env.n_actions)
         return np.clip(self.to_action(best["parameters"]) + noise, -1, 1).astype(self.env.action_space.dtype)
+
+    def _warm_start(self):
+        """Pull the actor to the best design's action for every state in the buffer (behaviour cloning, no
+        simulations), so TD3 starts where its critics learned from the warm-up. Only once the LLM has simulated a
+        design (otherwise the template's plain TD3) and only when the best design changed since the last warm start.
+        The target actor becomes a copy, so the critics' targets use the same policy."""
+        if not any(candidate["source"] == "simulate" for candidate in self.candidates.values()):
+            return
+        best = max(self.candidates.values(), key=lambda candidate: candidate["reward"])
+        key = tuple(best["parameters"].values())
+        if key == self.warm_started_for:
+            return
+        states = torch.as_tensor(self.replay.state[:self.replay.size], dtype=torch.float32)
+        target = torch.as_tensor(self.to_action(best["parameters"])).expand(len(states), -1)
+        for _ in range(WARM_START_STEPS):
+            loss = F.mse_loss(self.agent.actor(states), target)
+            self.agent.actor_optimizer.zero_grad()
+            loss.backward()
+            self.agent.actor_optimizer.step()
+        self.agent.actor_target.load_state_dict(self.agent.actor.state_dict())
+        self.warm_started_for = key
 
     def to_action(self, params):
         """The inverse of env.action_refine: grid index k -> the centre of its action bin (k = n-1 needs a = +1)."""

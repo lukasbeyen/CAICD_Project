@@ -233,6 +233,36 @@ def test_the_warmup_is_uniform_until_the_llm_simulates_a_design(make_experiment)
     assert rows['mn1'].max() - rows['mn1'].min() > 10  # spread over the grid: the template's random warm-up
 
 
+def test_train_first_pulls_the_actor_to_the_best_design(make_experiment):
+    experiment = make_experiment(batch_size=8)
+    experiment.simulate(a_design(experiment, 0.1))
+    experiment.warmup(8)
+    best = max(experiment.candidates.values(), key=lambda candidate: candidate['reward'])
+    state = torch.as_tensor(experiment.replay.state[:1], dtype=torch.float32)
+    target = torch.as_tensor(experiment.to_action(best['parameters']))
+    distance = lambda: (experiment.agent.actor(state)[0] - target).abs().max().item()
+    with torch.no_grad():
+        before = distance()
+    experiment._warm_start()
+    with torch.no_grad():
+        after = distance()
+    assert after < 0.25 * before
+    assert experiment.warm_started_for == tuple(best['parameters'].values())
+    # the target actor is a copy of the warm-started actor
+    assert all(torch.equal(a, b) for a, b in zip(experiment.agent.actor.parameters(), experiment.agent.actor_target.parameters()))
+    # the same best design: no second clone, so the training's own updates are kept
+    weights = [w.detach().clone() for w in experiment.agent.actor.parameters()]
+    experiment._warm_start()
+    assert all(torch.equal(a, b) for a, b in zip(weights, experiment.agent.actor.parameters()))
+
+
+def test_without_an_llm_design_train_is_the_templates_plain_td3(make_experiment):
+    experiment = make_experiment(batch_size=8)
+    experiment.warmup(8)
+    experiment.train(2)
+    assert experiment.warm_started_for is None
+
+
 # ---------- get_status and the history ----------
 
 def test_get_status_ranks_distinct_designs_and_returns_copies(make_experiment):
