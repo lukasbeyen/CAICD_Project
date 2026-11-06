@@ -2178,3 +2178,28 @@ chose option B.
   - keep it (it doesn't hurt, gives more feasible designs, and it's honest material for the report);
   - re-clone at every `train` call and train in short pieces (e.g. 3 × 20), which keeps pulling it back;
   - drop `train` and spend the 66 simulations on the warm-up.
+
+### 2026-11-06 — 4.v4.1 experiment: `train(200)` instead of 60
+**Goal:** Brent: see how much longer training improves.
+
+**What:** the same seed and first 4 calls as the v4 run (113 identical simulations, best 0.6462), then
+`train(200)` with the warm start. 333 simulations, deliberately over the harness budget. Record:
+`CAD/harness/sessions/2026-11-06_experiment-train200/` (commit `6bdc0dd`). No code change.
+
+**Result:**
+- No improvement: the best stays 0.6462, no training design beats it, and 4 of 200 meet all specs.
+- A U-shape in the median distance from the best:
+  - 19 grid steps (steps 1–25);
+  - up to 120 (steps 76–100);
+  - back to 34 (steps 176–200).
+- The median reward goes −0.8 → −3.5 → −0.9.
+
+**Interpretation (for the exam):**
+- The warm-started actor starts right.
+- In the first ~100 steps the immature critics' slope pulls it away.
+- After that the critics have learned enough to bring it back.
+- So TD3 learns, but 200 steps only bring it back near its start. To beat a local search around a good design it
+  needs many more steps, as in milestone 3 (thousands of simulations).
+
+**For Brent:** within the < 200 budget, `train` can't pay off. Options: keep it as an honest demonstration; or drop
+it and give its simulations to the warm-up.
