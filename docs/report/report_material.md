@@ -337,7 +337,7 @@ Pareto alternative: mn3 3, mn4 8, mn5 12 → 830.5 µm², 222.6 µA, PM 61.1°, 
 every log entry itself. And the LLM and the RL never met.
 
 **What changed:**
-- **The backend** (`hybrid_tools.py`, `HybridExperiment` on top of the unchanged `SizingExperiment`):
+- **The backend** (`hybrid_tools.py`, `HybridExperiment` on top of the unchanged `SizingExperiment`; removed from the final branch on 6 Nov, still on branch `feat/m4-hybrid`, its parts that v3 uses now live in `tutor_tools.py`):
   - **every LLM simulation becomes a TD3 transition**, via the exact inverse of `action_refine`;
   - the LLM can give a design **as changes** to an earlier one;
   - `rl_explore(n)` runs **short TD3 bursts** (~30 simulations): the actor is warm-started on the current best design
@@ -367,7 +367,7 @@ every log entry itself. And the LLM and the RL never met.
 across their full ranges. New role: **the LLM is the RL's tutor, not its rival.** It uses its circuit knowledge to
 set up the RL's job, and the RL optimizes.
 
-**What changed** (`tutor_tools.py`, `TutorExperiment` on top of `HybridExperiment`): one tool call,
+**What changed** (`tutor_tools.py`, `TutorExperiment`, since 6 Nov directly on top of the template's `SizingExperiment`): one tool call,
 `setup_rl(nominal, search_space, warmup)`.
 - **The nominal:** a hand design from the equations.
 - **The search space:** only the parameters that matter are free, each with ~11 grid points around the nominal; the
@@ -460,7 +460,5 @@ A disciplined test run afterwards (Claude Code following only the prompt files, 
 | `test_harness_vs_rl.py` | 4 |
 | `test_reference_rewards.py` | 1 |
 | `test_mcp_server.py` | 1 |
-| `test_hybrid_tools.py` | 14 |
-| `test_hybrid_mcp_server.py` | 1 |
-| `test_tutor_tools.py` | 14 |
+| `test_tutor_tools.py` | 19 |
 | `test_tutor_mcp_server.py` | 1 |

@@ -10,7 +10,7 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 - Milestones 1 and 2 on `main` (PR #8).
 - Milestone 3 on `feat/td3` (not pushed).
 - Milestone 4 on `feat/m4-harness` (from `feat/td3`). Both merged with `main` (Lukas's M3) on 6 Nov and pushed as
-  **`einstein_LLM`**. **Current branch: `feat/m4-harness`.**
+  **`einstein_LLM`**. **Current branch: `feat/m4-tutor`** (harness v3.2, from `feat/m4-hybrid`; not pushed; 160 tests pass).
 - Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
 - Deadline: Sun 8 Nov 2026, 23:59.
 
@@ -1956,3 +1956,118 @@ prompt files, every value derived from the skill's equations; a disciplined repl
 
 **Lesson:** with the fixes, the tutor's equations alone (no knowledge of earlier results) lead to a nominal that
 almost meets the specs. The RL does the last step. `refine` helps only if its move is still valid at the new design.
+
+### 2026-11-06 — 4.v3.2: refine guided by the spec margins (no extra simulations)
+**Goal:** Brent: make `refine` perform better without costing many runtime tokens; no simulation needed.
+
+**What changed** (branch `feat/m4-tutor`, commit `c1cbc9f`):
+- `CAD/tutor_tools.py`: `run_rl` returns two new fields, computed from numbers it already has:
+  `best_margin_pct` (`_margins`) and `best_at_range_edge` (`_at_edge`). Lines: 116:            "best_margin_pct": self._margins(best["specs"]), 117:            "best_at_range_edge": self._at_edge(best["parameters"]), 177:    def _margins(self, specs): 186:    def _at_edge(self, parameters): 
+- `CAD/tutor_mcp_server.py`: the `run_rl` description mentions the margins.
+- `CAD/.agents/agents/tutor.md` step 6: "read `best_margin_pct` first: never spend a spec with < 3 % margin"
+  (1485 B, budget 1500).
+- `CAD/.agents/skills/rl-tutoring/SKILL.md` "After the RL run": the binding-spec rule; sensitivities measured at the
+  nominal don't hold at the best, so mix single steps with coupled ones; the range edges.
+- `tests/test_tutor_tools.py`: asserts for both fields.
+
+**How it works:** a constrained optimiser (the RL) stops where a hard spec *just* passes: the optimum of
+"minimise area + current subject to specs" lies on a constraint boundary. That spec is binding. Any refine move that
+costs it fails the spec and drops the reward far below the best's. So the tutor must see which spec is binding.
+Margin = (y − y*)/y* · 100 % (reversed for noise, an upper bound). A refine move must then either buy headroom on
+the binding spec with another spec's margin (e.g. PM margin → Cc ↓ → GBW ≈ gm1/(2πCc) ↑) or leave it untouched.
+`best_at_range_edge` lists the free parameters at the edge of the RL's range. `refine` is checked against that
+grid, so a move past the edge would be refused, and a refused call costs a retry turn (tokens).
+
+**Decisions:**
+- First idea: a local sensitivity table (a linear fit on the RL's designs near the best). I tested it offline on the
+  fresh run's history. It predicted −2 % UGBW for mp3 +1 / mn5 −1; the measurement was −8.6 % (the two interact
+  through the mirror balance). It would not have helped, so it was not built.
+- Diagnosis: the fresh run's best had a UGBW margin of only +0.3 % (100.3 MHz). All 3 current cuts failed UGBW;
+  the 2 designs that didn't cut current stayed just below the best. The margins make that visible for ≈ 30 tokens.
+- The prompt rule is general constrained-optimisation knowledge, not a session result.
+
+**Verification:** 160 tests pass. Not simulated (Brent: not needed).
+
+**For Brent to check:** the effect shows only in the next real agy session.
+
+### 2026-11-06 — 4.v3.2: refine in two rounds (probe, then combine)
+**Goal:** Brent: improve the tutor slightly, e.g. give it another simulation round of its own. The 1500 B limit on
+`tutor.md` may be relaxed, but without a big step up in tokens. Brent tests it himself in agy.
+
+**What changed** (branch `feat/m4-tutor`, commit `2dfd720`):
+- `CAD/tutor_tools.py`: `MAX_REFINE_ROUNDS = 2` and the counter `self.refine_rounds`. A third call is refused;
+  a refused call doesn't count as a round. `refine` also returns `best_after` (reward + `margin_pct` of the best
+  after the round) and `rounds_left`. Lines: 23 33 66 67 74 77 81 82 
+- `CAD/.agents/agents/tutor.md` step 6: round 1 = probe, 3–5 single steps at the best; round 2 = combine the
+  helpful steps or buy headroom on the binding spec (1692 B).
+- `tests/test_harness_files.py`: the agent-file budget goes from 1500 to 1800 B.
+- `AGENTS.md`, the `rl-tutoring` skill (the budget is now ≈ 85–130 sims), the `refine` description in
+  `tutor_mcp_server.py`.
+- `tests/test_tutor_tools.py`: `test_refine_runs_two_rounds_the_second_from_the_new_best`.
+
+**How it works:** the warm-up measures the sensitivities around the nominal. After the RL run the operating point
+has moved (other currents, another mirror balance), so those numbers no longer hold (the fresh run: mn5 −1 gave
+−2.8 % UGBW at the nominal and −8.6 % at the best). Round 1 measures them again where it matters: one-at-a-time
+steps at the best, i.e. a finite-difference sensitivity measurement. Round 2 combines the steps that helped. A
+round-1 step that is itself a better design becomes the new best, and round 2 starts from there. This is the same
+idea as the warm-up, a one-at-a-time sensitivity table, applied at the optimum instead of at the nominal.
+
+**Decisions:**
+- Capped at 2 rounds in the code, so the tokens stay bounded: each extra tool call is one more model turn that
+  rereads the tutor's context. Estimate: +1 turn and ≈ +3–5 simulations per session (≈ 7 → 8 tutor turns).
+- `tutor.md` +200 B (≈ +50 tokens per tutor turn).
+- No second RL run (Brent removed it earlier); the extra round is the LLM's own.
+
+**Verification:** 161 tests pass. Not simulated; Brent tests it in agy.
+
+**For Brent to check:** in the agy session, does round 1 contain single steps, and does round 2 build on its table?
+
+### 2026-11-06 — 4.v3.2: one file for the final harness (v2 code removed)
+**Goal:** Brent: as little extra code as possible for the oral exam, without losing any functionality of the final
+harness. Brent chose to drop v2 (it stays on branch `feat/m4-hybrid` and in its session record).
+
+**What changed** (branch `feat/m4-tutor`, commit `7dc544d`):
+- `CAD/tutor_tools.py`: `TutorExperiment` now extends the course template's `SizingExperiment` directly
+  (323 lines). Map: 24:MAX_TOTAL_SIMS, 25:MAX_WARMUP, 26:MAX_REFINE, 27:MAX_REFINE_ROUNDS, 28:MAX_BURST, 29:WARM_START_STEPS, 30:MAX_LOG_CHARS, 31:LOG_PATH, 32:SPECS, 35:TutorExperiment, 37:__init__, 49:setup_rl, 73:run_rl, 120:refine, 144:log_entry, 165:to_action, 175:state_of, 179:_best, 184:_simulate_from, 195:_rl_step, 216:_warm_start, 239:_budget, 244:_narrow, 260:_range, 270:_check_designs, 278:_simulate_table, 298:_free_ranges, 303:_margins, 312:_at_edge.
+- Moved over from `hybrid_tools.py`, unchanged: `to_action`, `state_of`, `_best`, `_warm_start`, `log_entry`;
+  `rl_explore`'s per-step body is now `_rl_step`.
+- Removed (v2 only):
+  - the `simulate(parameters | changes, base="best" | n)` override and `_design` → `_simulate_from(base, parameters,
+    reason)`, where base is the design itself;
+  - `_call_of`, no longer needed;
+  - `rl_explore`'s 15-line report, which `run_rl` discarded;
+  - `_on_full_grid` → the template's `_validate_parameters`. At `setup_rl` time the grid is still the full one, so it
+    is the same check.
+- `setup_rl`: the narrowed grid is set first; `_check_designs` + the nominal run inside one `try` that restores the
+  full grid on an error. So `_check_designs` no longer swaps grids itself.
+- Deleted: `hybrid_tools.py`, `hybrid_mcp_server.py`, `tests/test_hybrid_tools.py`, `tests/test_hybrid_mcp_server.py`.
+- `tests/test_tutor_tools.py` (19 tests): the v2 tests that cover behaviour v3.2 still uses, ported to the
+  `setup_rl`/`run_rl` API:
+  - the action ↔ design inverse on the full grid;
+  - every design is one transition (action, reward, next state);
+  - a failed sim adds no transition;
+  - one RL step = 1 sim, 1 transition, 1 update; the episode starts at the best;
+  - the warm start only when the best changed;
+  - the log.
+- `CAD/harness/README.md` (the chain, `refine`); `docs/report/report_material.md` (v2's code location, the tests
+  table).
+
+**How it works:** the stack for the exam is now 2 files on top of the template: `tutor_mcp_server.py` (the 5 MCP
+tools) → `tutor_tools.py` → `sizing_tools.py` (the course's TODOs, filled in).
+
+**Decisions:**
+- `sizing_tools.py` and `mcp_server.py` not touched (the course template).
+- `run_rl`'s bursts are now `step % MAX_BURST == 0 → _warm_start`: the same moments as before (steps 0, 60, 120).
+- One detail: the warm-up's `delta_pct` is now computed from the nominal's full-precision specs. Before, it used the
+  4-digit rounded copy; `refine` already used full precision. The rows can differ at most in the 0.1 % digit.
+
+**Verification:**
+- 150 tests pass (161 − 15 v2 tests + 4 new; the other ported checks were added to existing tests).
+- No `.py` file references `hybrid` anymore.
+- Real-ngspice smoke test, 9 sims (`setup_rl` with the fresh run's nominal + 2 warm-up, `run_rl(5)`, `refine(1)`):
+  - nominal −0.0447 and mn4 +1 → 0.6562, the same as in the fresh run;
+  - history sources simulate×3, rl×5, simulate; buffer = 9 = successful sims;
+  - margins reported. The run folder was deleted afterwards.
+- M4 code beyond the template: 565 → 408 lines.
+
+**For Brent to check:** nothing pushed.
