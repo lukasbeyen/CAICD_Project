@@ -197,6 +197,42 @@ def test_same_seed_gives_the_same_warmup_designs(make_experiment):
     assert designs[0].equals(designs[1]) and not designs[0].equals(designs[2])
 
 
+# ---------- the warm-up around the LLM's design ----------
+
+def test_every_grid_value_maps_to_an_action_and_back(make_experiment):
+    # to_action is the exact inverse of action_refine: a design's action is the centre of its action bin
+    experiment = make_experiment()
+    base = a_design(experiment)
+    for name, (min_val, max_val, step) in experiment.env.dict_params.items():
+        for value in np.arange(min_val, max_val, step):
+            design = experiment._validate_parameters(dict(base, **{name: float(value)}))
+            assert experiment.env.action_refine(experiment.to_action(design)) == design, (name, value)
+
+
+def test_after_a_simulate_the_warmup_explores_around_the_best_design(make_experiment):
+    experiment = make_experiment()
+    best = experiment.simulate(a_design(experiment, 0.1))['parameters']  # the LLM's design, the only candidate
+    designs = [experiment.env.action_refine(experiment._warmup_action()) for _ in range(200)]  # no simulations
+    for name, (min_val, max_val, step) in experiment.env.dict_params.items():
+        moved = np.array([abs(design[name] - best[name]) / step for design in designs])  # in grid steps
+        if name.startswith('l'):  # 4 grid points: the noise sigma 0.1 practically never moves a length
+            assert (moved == 0).mean() > 0.97, name
+        elif name.startswith('m'):  # 24 grid points: about +-1 step
+            assert moved.max() <= 5 and moved.mean() < 1.5, name
+    # the centre follows the best measured design (the warm-up is a random local search): without noise, it is the best
+    experiment.warmup(20)
+    experiment.agent.expl_noise = 0.0
+    now_best = max(experiment.candidates.values(), key=lambda candidate: candidate['reward'])['parameters']
+    assert experiment.env.action_refine(experiment._warmup_action()) == now_best
+
+
+def test_the_warmup_is_uniform_until_the_llm_simulates_a_design(make_experiment):
+    experiment = make_experiment(seed=3)
+    experiment.warmup(30)
+    rows = history(experiment).query("source == 'warmup'")
+    assert rows['mn1'].max() - rows['mn1'].min() > 10  # spread over the grid: the template's random warm-up
+
+
 # ---------- get_status and the history ----------
 
 def test_get_status_ranks_distinct_designs_and_returns_copies(make_experiment):

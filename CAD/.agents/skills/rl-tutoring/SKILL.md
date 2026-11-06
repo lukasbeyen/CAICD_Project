@@ -1,38 +1,32 @@
 ---
 name: rl-tutoring
-description: How to set up the TD3 sizer's job - the search space (which parameters to free, how many grid points), the warm-up set - and how the RL uses them.
+description: How the course's RL tools work (simulate, warmup around the best design, train, episode resets), how far TD3's noise moves each parameter, how to split the budget and how to refine after the RL.
 ---
 # Tutoring the RL
-- **What the RL does:**
-  - TD3 learns from every design in its replay buffer: the nominal, the warm-up, its own.
-  - Each burst starts at the current best design, and the actor is first pulled towards it.
-  - It proposes the actor's output + noise σ 0.1 in the action space [−1, 1] of each free parameter's range. Fixed
-    parameters never move.
-- **The search space sets the exploration.** With σ 0.1, the chance that a free parameter moves at least one grid
-  step per RL step depends on its number of grid points:
-  - 5 points ≈ 1 % (practically frozen);
-  - 11 points ≈ 30 %;
-  - 21 points ≈ 60 %, with larger jumps.
-  
-  So give the parameters to optimize about 11 points (e.g. multiplicities ±5 fingers, Cc ±0.5 pF, Rc ±500 Ω) and
-  fix the rest.
-- **The space must contain what the equations demand**, or the RL can never reach it: Cc small enough for
-  GBW ≥ 100 MHz (Cc ≤ gm1/(2π·100 MHz), usually below 1 pF) and Rc around (1 + CL/Cc)/gm6 (several kΩ).
-- **What to free:** the levers of the specs and targets: the tail and second-stage currents (mn4, mn5), mp3 (balance,
-  gm6), the input pair (mn1), Cc, Rc.
-- **What to fix:** all L (in 45 nm a different L breaks the mirror balance), the bias diode mn3 (the mirror ratios
-  already set the currents), usually the widths.
-- **A good warm-up** teaches the critic the local landscape:
-  - ±1 grid step of every free parameter, one at a time;
-  - 2–3 coupled moves, e.g. both mirror currents up/down with the balance S_p3/S_p1 = 2·S5/S4 kept.
-  
-  Every design is real data for the RL, and the table shows you the sensitivities.
-- **After the RL run** (`refine`, 2 rounds: probe, then combine), use its report:
-  - `best_margin_pct`: the RL stops where a spec just passes. A spec with < 3 % margin is binding: a current or area
-    cut that costs it fails. First buy it headroom with another spec's margin (e.g. PM → Cc ↓ for UGBW), or step
-    only on parameters that don't move it;
-  - the warm-up's sensitivities hold at the nominal, not at the best: mix single steps with coupled ones;
-  - `best_at_range_edge`: `refine` can't go further that way;
-  - a coupled move that keeps the mirror balance (mn4, mn5 and mp3 together), which the RL's noise rarely finds.
-- **Budget** (strictly < 200, enforced): nominal + warm-up ≈ 10–20, `run_rl` 60–100, `refine` 2 rounds of 2–5:
-  ≈ 85–130 in total.
+- **The RL:** TD3 (an actor and twin critics). Its action is a whole design (each parameter's grid mapped to
+  [−1, 1]); its state is the normalized specs of the last design. It learns from its replay buffer.
+- **`simulate`** doesn't enter the buffer, but it decides where the warm-up explores. `warmup` draws its random
+  actions around **the best design measured so far** (by reward), with TD3's exploration noise σ 0.1. When a warm-up
+  design is better, the centre moves there: a random local search around your design.
+- **How far σ 0.1 moves a parameter**, per draw:
+  - multiplicities (24 values): about ±1 finger, sometimes 2;
+  - widths (11 values): one step in ≈ 30 % of the draws;
+  - lengths (4 values): practically never;
+  - Cc, Rc (99 values each): about ±0.5 pF and ±500 Ω.
+
+  All parameters move at once, so every draw shifts the mirror balance a little. **Hand over a balanced design that
+  passes all hard specs with some margin**; otherwise the local search spends its simulations repairing it.
+- **Episodes** last 10 steps. Every reset is a uniformly random design: one simulation, usually far worse; it moves
+  the centre only if it's better.
+- **`train(n)`:** TD3 learns from every transition (one update per step). It needs ≥ 100 transitions (batch 100), so
+  `warmup(100)` first. Its actor starts untrained, so its first designs are not at your design; its critics have
+  learned the region around your design from the warm-up.
+- **Budget** (strictly < 200, by rule): the nominal + fixes ≤ 6, `warmup(100)` ≈ 110, `train` 40–60 (+ resets),
+  refining ≤ 10: ≈ 180–190 in total.
+- **Refining after the RL** (`get_status(5)`, then `simulate` with all 20 values):
+  - the margin of each hard spec = (y − y*)/y* (reversed for noise). The RL stops where a spec just passes; a spec
+    with < 3 % margin is binding, and a current or area cut that costs it fails. First buy it headroom with another
+    spec's margin (e.g. PM → Cc ↓ for UGBW), or step only on parameters that don't move it;
+  - the sensitivities from your nominal don't hold at the best: probe single steps first, then combine;
+  - a coupled move that keeps the mirror balance (mn4, mn5 and mp3 together), which random noise rarely finds;
+  - a step that spends a spec's margin (e.g. PM headroom on area via Cc).

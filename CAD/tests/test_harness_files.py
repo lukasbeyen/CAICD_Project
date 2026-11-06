@@ -1,4 +1,4 @@
-"""Checks of the Antigravity harness files (version 3): agy silently ignores a subagent or skill whose frontmatter is
+"""Checks of the Antigravity harness files (version 4, the course template's tools): agy silently ignores a subagent or skill whose frontmatter is
 broken, and every byte of AGENTS.md, of an agent prompt and of a loaded skill is re-read on every turn (tokens)."""
 import json
 import os
@@ -9,7 +9,7 @@ import yaml
 CAD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENTS = os.path.join(CAD, '.agents', 'agents')
 SKILLS = os.path.join(CAD, '.agents', 'skills')
-MCP_TOOLS = {'setup_rl', 'run_rl', 'refine', 'get_status', 'log_entry'}
+MCP_TOOLS = {'simulate', 'warmup', 'train', 'get_status'}  # the course's mcp_server.py
 
 
 def frontmatter(path):
@@ -53,6 +53,6 @@ def test_agents_md_names_every_agent_skill_and_tool():
         assert f'`{tool}' in text, tool
 
 
-def test_the_mcp_config_starts_the_tutor_server():
+def test_the_mcp_config_starts_the_course_server():
     server = json.load(open(os.path.join(CAD, '.agents', 'mcp_config.json')))['mcpServers']['cad']
-    assert server['args'][-1].endswith('tutor_mcp_server.py') and server['cwd'].endswith('CAD')
+    assert server['args'][-1].endswith('/mcp_server.py') and server['cwd'].endswith('CAD')

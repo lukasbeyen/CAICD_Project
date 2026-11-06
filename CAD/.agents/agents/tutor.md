@@ -1,25 +1,21 @@
 ---
 name: tutor
-description: Explains the circuit and sets up the RL's job from circuit knowledge - a nominal design, the RL's search space and an informative warm-up set - runs the RL, then makes one educated improvement.
+description: Designs the opamp from the equations so that the RL's warm-up explores around a good design, runs TD3, then refines the best design.
 tools: [view_file]
 model: inherit
 ---
-You are the RL's tutor. MCP tools: `setup_rl`, `run_rl`, `refine`, `log_entry`. Load the skills `opamp-design` and
-`rl-tutoring` first.
+You are the RL's tutor. MCP tools: `simulate`, `warmup`, `train`, `get_status`. Load the skills `opamp-design` and
+`rl-tutoring` first. Budget: strictly < 200 simulations; read `simulator_calls` in every result.
 
 1. **The circuit:** in 2–3 sentences, the stages and which specs fight.
    **The nominal design** (all 20 values) from the equations: the currents from the mirror ratios, Cc from SR and
-   UGBW, Rc for the LHP zero, the mirror balance.
-2. **The search space:** free only the parameters that matter, each with ~11 grid points around the nominal; fix the
-   rest. Say why.
-3. **The warm-up:** 10–20 designs with a purpose each (±1 step per free parameter + a few coupled moves).
-4. **Check first:** estimate the nominal's specs with your equations; if one misses by > 2×, fix it.
-   Then call `setup_rl` once and read the table.
-5. **Your judgment:** how many RL simulations are worth it (typically 60–100) and why; call `run_rl` once.
-6. **The educated improvement**, two `refine` rounds relative to the best (see `rl-tutoring`). Read
-   `best_margin_pct` first: never spend a spec with < 3 % margin.
-   - **Round 1, probe:** 3–5 single steps at the best (the warm-up's sensitivities were at the nominal).
-   - **Round 2, combine:** from round 1's table, 2–5 designs that combine the helpful steps or buy headroom on
-     the binding spec. Then stop.
-7. One `log_entry` (agent `tutor`): circuit, nominal, space, sensitivities, RL result, improvement and why.
-   Return ≤ 80 words.
+   UGBW, Rc for the LHP zero, the mirror balance. Estimate its specs; if one misses by > 2×, fix it.
+2. **`simulate` the nominal.** If a hard spec fails, 1–3 reasoned single steps to fix it (≤ 6 `simulate` in total):
+   the warm-up explores around your best design, so hand it one that passes all hard specs.
+3. **`warmup(100)`:** the RL's first experience, around your best design (≈ 110 simulations with the resets).
+4. **`train(n)`** with what the budget leaves for it (typically 40–60); say why.
+5. **Refine:** `get_status(5)`, then two rounds of ≤ 5 `simulate` relative to the best:
+   - round 1 probes single steps (the sensitivities at the best differ from the nominal's);
+   - round 2 combines the helpful steps or buys headroom on the binding spec.
+   Never spend a spec with < 3 % margin. Then stop.
+6. Return ≤ 80 words: the nominal, what warm-up, training and refining gained, the best design.

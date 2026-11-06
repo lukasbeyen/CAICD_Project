@@ -244,7 +244,7 @@ class SizingExperiment:
                 if training:
                     action = self.agent.select_action(self.observation)  # actor + exploration noise
                 else:
-                    action = self.env.action_space.sample()  # random warm-up action
+                    action = self._warmup_action()  # random, around the LLM's best design once it simulated one
                 next_observation, reward, done, info = self.env.step(action)
                 self.simulator_calls += 1
                 self._record_and_log(self.env, self.env.param_values, self.env.real_specs, source, reason)
@@ -270,6 +270,26 @@ class SizingExperiment:
                        "simulator_calls_used": self.simulator_calls - calls_before,
                        "updates_performed": self.updates - updates_before})
         return status
+
+    # ---------- added: the warm-up around the LLM's design ----------
+
+    def _warmup_action(self):
+        """A random warm-up action: uniform over the grid, or, once the LLM has simulated a design, around the best
+        measured design with TD3's own exploration noise (so the LLM's conclusions steer the RL's first experience)."""
+        if not any(candidate["source"] == "simulate" for candidate in self.candidates.values()):
+            return self.env.action_space.sample()  # the template's uniform warm-up
+        best = max(self.candidates.values(), key=lambda candidate: candidate["reward"])
+        noise = self.env.np_random.normal(0, self.agent.expl_noise, self.env.n_actions)
+        return np.clip(self.to_action(best["parameters"]) + noise, -1, 1).astype(self.env.action_space.dtype)
+
+    def to_action(self, params):
+        """The inverse of env.action_refine: grid index k -> the centre of its action bin (k = n-1 needs a = +1)."""
+        action = []
+        for name, (min_val, max_val, step) in self.env.dict_params.items():
+            n_steps = round((max_val - min_val) / step)
+            k = round((params[name] - min_val) / step)
+            action.append(min((2 * k + 1) / (n_steps - 1) - 1, 1.0))
+        return np.array(action, dtype=np.float32)
 
     # ---------- added: logging every simulator call, keeping feasible netlists, cleaning no_backup/ ----------
 
