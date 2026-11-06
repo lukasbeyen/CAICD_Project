@@ -2582,3 +2582,18 @@ read; judgement stops with reasons).
 - This is the honest evaluation number for RL-first: unseen seeds, frozen harness.
 
 **Next:** the LLM-first big-RL flow on the same seeds (Brent is starting it).
+
+### 2026-11-06 — 4.v4.1: the RL → LLM → RL prompt saved for the report
+**Brent:** that run went very well; save the exact prompt for the report, without the final polish warm-up.
+
+**What** (commit `0f1cd3b`):
+- `CAD/harness/prompts/rl_first_evaluated.txt`: byte for byte the prompt of the evaluation runs, taken from the
+  three transcripts (identical apart from the paste wrapper).
+- `CAD/harness/prompts/rl_first_final.txt`: without step 4 (`warmup(50)`), budget 2200 → 2100.
+- `CAD/harness/prompts/README.md`:
+  - why the polish was removed: it never produced the final design in the evaluation, all three finals came from
+    train 2 before it; the final version itself was not re-run;
+  - the flow;
+  - the exact launch setup (lanes, the locked-down `claude` command).
+
+Report material: a section "The final flow: RL → LLM → RL" with the development and evaluation tables.

@@ -332,6 +332,50 @@ Pareto alternative: mn3 3, mn4 8, mn5 12 → 830.5 µm², 222.6 µA, PM 61.1°, 
 - The subagents' MCP tool limits are set in their prompts and the orchestrator's routing, not in an `agy`
   configuration. Whether `agy` can enforce them per agent was not tested.
 
+### The final flow: RL → LLM → RL (the course's tools), evaluated on unseen seeds
+**Prompt:** `CAD/harness/prompts/rl_first_final.txt`. The exact evaluated version, with a polish `warmup(50)` that
+never produced the final design, is `rl_first_evaluated.txt`. Reproduction: `CAD/harness/prompts/README.md`.
+Records: `CAD/harness/sessions/2026-11-06_eval-rl-first-seeds345/`.
+
+**The flow:**
+1. `warmup(100)` + `train(800)`;
+2. ≤ 5 iterative LLM `simulate`, each reasoned on the margins and both FoM terms;
+3. `warmup(200)` around the best + `train(800)` with the warm start;
+4. a judgement stop or ≤ 3 refinements;
+5. the reviewer.
+
+≈ 2100 simulations. The skills and the prompt contain only general knowledge (circuit equations, how the tools
+behave), no values taken from earlier runs.
+
+**Development vs. evaluation:** the flow was developed on seeds 123456 / 1 / 2:
+
+| round | mean FoM |
+|---|---|
+| 1 | 0.489 ± 0.127 |
+| 2 | 0.539 ± 0.178 |
+| 3 | 0.603 ± 0.132 |
+
+It was then frozen and evaluated by fresh, locked-down Claude Code (Sonnet) sessions on seeds 3, 4, 5, never used
+for tuning:
+
+| seed | RL 1 | LLM step | warm-up 2 | train 2 | **final** | design |
+|---|---|---|---|---|---|---|
+| 3 | 0.015 | 0.691 (2 sims) | 0.697 | 0.702 | **0.702** | 230 µA, 716 µm² |
+| 4 | 0.433 | 0.593 (4 sims) | 0.603 | 0.616 | **0.616** | 256 µA, 780 µm² |
+| 5 | 0.325 | 0.652 (5 sims) | 0.644 | 0.698 | **0.698** | 221 µA, 762 µm² |
+
+- **Mean 0.672 ± 0.049.** ≈ 2150 sims and 9–10 min each (in parallel).
+- 13–17 model requests, 269–421k cache-read tokens per session.
+
+**Why it works:**
+- TD3 from scratch gives a rough start.
+- The LLM makes the large, reasoned moves the RL's noise can't. With only the general skill sentence, it moved Cc
+  into the sub-pF range itself.
+- The warm-up then searches around that design.
+- The warm-started TD3 improves it further: in all three runs, and it produced every final design.
+
+The LLM acts only twice, so the token cost stays low.
+
 ### Overview of all harness runs (which are usable for the report)
 Every run used real ngspice (TT corner, 27 °C). They differ in who played the agents and whether tool calls were
 replayed. The records are in `CAD/harness/sessions/`.
