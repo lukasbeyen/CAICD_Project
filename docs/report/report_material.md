@@ -222,6 +222,32 @@ there: the laptop slept and paused the VM.
 ---
 
 ## 4. LLM-based agentic harness (PDF §4)
+
+### 4.0 Final results in short (blind sessions only; the full table is in `CAD/harness/BEST_RUNS.md`)
+| structure | runs | FoM | tokens per run (calls · new · cached · output) | sims | time |
+|---|---|---|---|---|---|
+| **RL → LLM → RL** (final) | agy, seed 3 | **0.705** (0.699 before the quota ran out; train 2 replayed) | 15 · 50k · 294k · 7k | 2094 | 9.9 min |
+| RL → LLM → RL | Claude Code, seeds 3/4/5 | **0.672 ± 0.049** | ≈ 16 · 35k · 370k · 8k | ≈ 2150 | 9–10 min |
+| LLM → big RL | Claude Code, seeds 3/4/5 | **0.668 ± 0.011** | ≈ 16 · 38k · 425k · 15k | ≈ 2480 | 10–12 min |
+| LLM only (v1, `einstein_LLM`) | agy, seed 123456 | 0.684 | 95 · 806k · 1.39M · 117k | 16 | 15.7 min |
+
+- **The final harness:** the course's 4 tools only. Our additions sit inside the template's TODOs:
+  - the warm-up draws around the best design once the LLM has simulated one;
+  - `train` first pulls the actor to the best design.
+
+  Prompt: `CAD/harness/prompts/rl_first_final.txt`.
+- **Why it works:** TD3 alone finds little in ~1000 sims. One short LLM step makes the large, reasoned moves the
+  RL's noise can't (e.g. Cc into the sub-pF range). The warm-up and the warm-started TD3 then improve that design.
+- **v1 vs. the final flow:** v1 reached a similar FoM in 16 simulations, but with ≈ 6× the model calls and ≈ 16× the
+  new input tokens, and no RL in the loop.
+- **The two final flows** end level at ~2000 sims:
+  - LLM first: faster (≈ 0.61 after 200 sims) and more consistent;
+  - RL first: higher peaks and about half the output tokens.
+- **Integrity:**
+  - seeds 3–5 were never used for tuning;
+  - the prompts and skills contain only general knowledge, never values from earlier runs;
+  - the Claude Code runs were memory-free and locked down;
+  - the agy run's last RL phase was replayed and verified identical.
 *Report: the task breakdown and the agents (prompts, context, memory), the MCP tools, the skills, context/memory
 management, examples of explainability, the best solutions with reasoning, few simulations; runtime vs pure RL.*
 

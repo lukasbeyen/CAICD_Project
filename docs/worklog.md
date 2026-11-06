@@ -2678,3 +2678,15 @@ sources and failed flags).
 applies.
 
 Record: `CAD/harness/sessions/2026-11-06_agy-rl-first-seed3/` (commit `36a8fa6`).
+
+### 2026-11-06 — 4.v4.1: `CAD/harness/BEST_RUNS.md`, the report summary, pushed as `best_harnass`
+**What:**
+- `CAD/harness/BEST_RUNS.md`: the best **blind** runs only (fresh agy or Claude Code sessions without memory; no
+  runs played in the development chat), with the structure, seed, FoM, tokens, sims, time and details.
+- `docs/report/report_material.md` §4.0: a compact summary (the table, why it works, v1 vs. final, integrity).
+- Branch `best_harnass` from `feat/m4-template`, pushed (Brent's request).
+
+**Not pushed (untracked):**
+- the three agy v4 transcripts (committing files from `~/.gemini` was blocked);
+- the TAs' `.so` files;
+- `Solutions/` (an open decision).
