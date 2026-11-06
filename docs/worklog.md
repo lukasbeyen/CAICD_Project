@@ -2365,3 +2365,31 @@ Final 0.6475 (343 µA, 483 µm²).
 **Interpretation:** the warm start makes the second RL phase effective. TD3 starts at the LLM-refined region instead
 of where phase 1's actor left off. It costs 0 simulations and 0 tokens. One seed, but a clean A/B (only that line
 differs).
+
+### 2026-11-06 — 4.v4.1: a fresh Claude Code session, RL-first with the warm start and `train(1000)` (Brent)
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-fresh-rl-first-ws1000/` (commit `4a815e1`).
+
+**Result:**
+- RL 1 (1210 sims): best 0.005.
+- LLM (4 sims): 0.200.
+- The warm-up around it: **0.634**.
+- `train(1000)` with the warm start: best 0.625, no gain.
+- Final 0.634 (271 µA, 693 µm², UGBW +2.2 %, PM +1.9 %). 2424 sims, 9.5 min of simulation.
+
+**Tokens:** 13 requests; 1.5k + 376k cache read + 28k cache write + 6.1k output; $0.22.
+
+**All RL-first runs so far:**
+
+| run | warm start | train steps | LLM step | warm-up 2 | train 2 | final | tokens (requests, cache read) |
+|---|---|---|---|---|---|---|---|
+| my x2 experiment | no | 800 | 0.193 | 0.674 | 0.676 | 0.676 | (this chat) |
+| fresh session 1 | no | 800 | 0.333 | 0.597 | 0.601 | 0.601 | 16, 501k |
+| replay of fresh 1 | **yes** | 800 | 0.333 | 0.597 | **0.648** | 0.648 | (none) |
+| fresh session 2 | yes | 1000 | 0.200 | 0.634 | 0.625 | 0.634 | 13, 376k |
+
+**Interpretation:**
+- The robust pattern: the warm-up around the LLM-refined design gives the big climb (+0.38 to +0.48).
+- Phase 2's `train`:
+  - adds +0.05 with the warm start in the clean A/B;
+  - adds 0 when the warm-up's best already sits on binding specs (session 2: UGBW +2.2 %, PM +1.9 %).
+- RL-first sessions cost 13–16 requests, ≈ $0.2–0.3.
