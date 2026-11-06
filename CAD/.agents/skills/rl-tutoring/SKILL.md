@@ -19,9 +19,8 @@ description: How the course's RL tools work (simulate, warmup around the best de
 - **Episodes** last 10 steps. Every reset is a uniformly random design: one simulation, usually far worse; it moves
   the centre only if it's better.
 - **`train(n)`:** TD3 learns from every transition (one update per step). It needs ≥ 100 transitions (batch 100), so
-  `warmup(100)` first. Before its first step, the actor is pulled to the best design (no simulation), so TD3 starts
-  at your design and searches locally, where its critics learned from the warm-up. A reset costs one random
-  simulation, but the next design is again near the best.
+  `warmup(100)` first. Its actor starts untrained, so its first designs are not at your design; its critics have
+  learned the region around your design from the warm-up.
 - **Budget** (strictly < 200, by rule): the nominal + fixes ≤ 6, `warmup(100)` ≈ 110, `train` 40–60 (+ resets),
   refining ≤ 10: ≈ 180–190 in total.
 - **Refining after the RL** (`get_status(5)`, then `simulate` with all 20 values):
