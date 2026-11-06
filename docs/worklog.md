@@ -1620,3 +1620,21 @@ Plan: `~/.claude/plans/streamed-sauteeing-moonbeam.md`. Branch `feat/m4-hybrid` 
 - Real ngspice: TA reference 1 matches (reward −0.2533 vs TA −0.2528); a change works; **a 20-simulation burst from
   that design found 3 improvements, the best +0.309** (from −0.253). The smoke run's folders were removed.
 - All 144 tests pass.
+
+### 2026-11-06 12:30 — 4.H2: harness v2, the MCP server `hybrid_mcp_server.py`
+**What changed:**
+- New `CAD/hybrid_mcp_server.py`: the structure of the template server (one `HybridExperiment` per process, the lock,
+  the stdout redirect, `ToolError`), with 4 tools:
+  - `simulate(parameters | changes, base, reason)`;
+  - `rl_explore(n_steps, reason)`;
+  - `get_status(k = 3)`;
+  - `log_entry(agent, text)`.
+- **Short tool descriptions:** the model gets them on every turn. Together 1.5 kB (`simulate` 723 B, `rl_explore`
+  383 B, `log_entry` 256 B, `get_status` 182 B).
+- Type hints with `Optional`/`Union` (no `X | None`, which breaks on Python 3.9).
+- New `CAD/tests/test_hybrid_mcp_server.py` (over stdio):
+  - the 4 tools are listed;
+  - the descriptions and schemas are < 3000 B (a token-budget check);
+  - `get_status` answers;
+  - `rl_explore` before any design gives a readable error.
+- `mcp_server.py` (the template) is unchanged.
