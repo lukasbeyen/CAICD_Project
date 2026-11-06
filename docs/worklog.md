@@ -2544,3 +2544,18 @@ harness on seeds never used for tuning.
   same random actions, seed 4 different ones.
 - The prompt: the cleaned general version (trade-off instead of "≥ 10 % margin", a judgement stop instead of 3 %,
   `get_status(10)`, FoM reasoning in each `reason`).
+
+### 2026-11-06 — 4.v4.1: the second evaluation flow (LLM first, one big RL) prepared
+**Why:** on seed 123456, one big RL after an LLM design (the `train(2000)` experiment) reached 0.699, above all
+RL-first runs there (0.601–0.676). But that LLM step was mine (replayed), on one, favourable seed. The fair
+comparison is both flows run by fresh blind sessions on the same unseen seeds 3, 4, 5.
+
+**The flow (prompt only, general wording like the RL-first prompt):**
+1. a nominal from the equations, ≤ 6 `simulate`;
+2. `warmup(200)` + 2 × `train(1000)`;
+3. a polish `warmup(50)`;
+4. a judgement stop, else ≤ 3 refinements;
+5. the reviewer.
+
+≈ 2500 sims (vs ≈ 2150 for RL-first), so the comparison is also made at equal simulation numbers. Same lanes
+`~/harness_lanes/s3–s5`, new sessions after the RL-first runs.
