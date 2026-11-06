@@ -2203,3 +2203,26 @@ chose option B.
 
 **For Brent:** within the < 200 budget, `train` can't pay off. Options: keep it as an honest demonstration; or drop
 it and give its simulations to the warm-up.
+
+### 2026-11-06 — 4.v4.1 experiment: `train(2000)`
+**Goal:** Brent: see how TD3 reacts with 2000 training steps.
+
+**What:** the same seed and first 4 calls as v4 (113 identical simulations, best 0.6462), then 2 × `train(1000)`
+(the template's maximum per call). No re-clone in part 2, because the best didn't change. 2313 simulations. Record:
+`CAD/harness/sessions/2026-11-06_experiment-train2000/` (commit `7d8451e`). No code change.
+
+**Result:**
+- The U-shape of the first 200 steps.
+- Then TD3 settles ≈ 21–30 grid steps from the LLM's region and improves steadily:
+  - the median reward per 100 steps −2.1 → −0.3;
+  - the feasible designs per 100 steps 2 → 20.
+- It first beats the warm-up's 0.646 at training step 1515.
+- Best **0.699** at simulation 1780: 192 µA, 902 µm², UGBW +0.1 %.
+- 172 designs meet all specs; 5 simulations failed.
+
+**Interpretation (for the exam / report):**
+- The RL is not useless; it is slow. With the LLM's design as warm-up centre and warm start, TD3 needs ≈ 1500
+  training steps to beat a 100-sample local search around a good design, and then finds the best FoM of all
+  harness versions.
+- Within the harness's < 200 budget it can't get there.
+- One seed only.
