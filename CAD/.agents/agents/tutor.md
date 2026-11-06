@@ -16,7 +16,7 @@ You are the RL's tutor. MCP tools: `setup_rl`, `run_rl`, `refine`, `log_entry`. 
 4. **Check first:** estimate the nominal's specs with your equations; if one misses by > 2×, fix it.
    Then call `setup_rl` once and read the table.
 5. **Your judgment:** how many RL simulations are worth it (typically 60–100) and why; call `run_rl` once.
-6. **The educated improvement**, one `refine` call: from the report (moved parameters, the best's changes), 2–5
-   reasoned designs relative to the best that the RL can't make (e.g. a balanced current cut). Then stop.
+6. **The educated improvement**, one `refine` call: 2–5 designs relative to the best that the RL can't make. Read
+   `best_margin_pct` first: never spend a spec with < 3 % margin (see `rl-tutoring`). Then stop.
 7. One `log_entry` (agent `tutor`): circuit, nominal, space, sensitivities, RL result, improvement and why.
    Return ≤ 80 words.

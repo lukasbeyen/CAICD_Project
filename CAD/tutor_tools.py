@@ -113,6 +113,8 @@ class TutorExperiment(HybridExperiment):
                                         if best["parameters"][name] != nominal["parameters"][name]},
             "best_specs": short["specs"],
             "best_meets_all_specs": short["hard_constraints_satisfied"],
+            "best_margin_pct": self._margins(best["specs"]),
+            "best_at_range_edge": self._at_edge(best["parameters"]),
         }
 
     # ---------- helpers ----------
@@ -171,6 +173,28 @@ class TutorExperiment(HybridExperiment):
         grid = self.env.dict_params
         return {name: [grid[name][0], grid[name][1] - grid[name][2], round((grid[name][1] - grid[name][0]) / grid[name][2])]
                 for name in search_space}  # low, high, the number of grid points
+
+    def _margins(self, specs):
+        # the margin of each hard spec in % of its target; positive = met, a small one = the binding spec
+        margins = {}
+        for name in self.env.hard_constraints:
+            target = self.env.dict_targets[name]
+            sign = -1.0 if name in self.env.UPPER_BOUND_SPECS else 1.0  # noise must stay below its target
+            margins[name] = round(100 * sign * (specs[name] - target) / target, 1)
+        return margins
+
+    def _at_edge(self, parameters):
+        # free parameters at the low or high end of the RL's range: refine can't move them further that way
+        edges = {}
+        for name, (low, end, step) in self.env.dict_params.items():
+            high = end - step
+            if high - low < step / 2:
+                continue  # a fixed parameter
+            if parameters[name] <= low + step / 2:
+                edges[name] = "low"
+            elif parameters[name] >= high - step / 2:
+                edges[name] = "high"
+        return edges
 
     def _call_of(self, candidate):
         # the latest simulation number of a stored design

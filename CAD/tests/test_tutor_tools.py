@@ -143,6 +143,17 @@ def test_run_rl_is_n_simulations_inside_the_space(make_experiment):
     assert len(curve) == 3 and curve == sorted(curve) and curve[0] >= report['start_reward']
     assert set(report['moved_in_improvements']) <= set(space)  # only free parameters can move
     assert set(report['best_changes_vs_nominal']) <= set(space)
+    # the margins of the hard specs at the best: (y - y*)/y* in %, reversed for noise (an upper bound)
+    best = experiment._best()
+    margins = report['best_margin_pct']
+    assert set(margins) == set(experiment.env.hard_constraints)
+    assert margins['ugbw'] == round(100 * (best['specs']['ugbw'] / 100e6 - 1), 1)
+    assert margins['noise'] == round(100 * (1 - best['specs']['noise'] / 30e-3), 1)
+    if report['best_meets_all_specs']:
+        assert min(margins.values()) >= 0
+    # only free parameters can sit at a range edge, and only at one of their bounds
+    for name, side in report['best_at_range_edge'].items():
+        assert name in space and best['parameters'][name] == pytest.approx(space[name][0 if side == 'low' else 1])
 
 
 # ---------- refine: the educated improvement after the RL run ----------

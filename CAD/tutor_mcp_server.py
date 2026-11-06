@@ -48,7 +48,7 @@ def create_server(experiment):
     @server.tool()
     def run_rl(n_sims: StrictInt, reason: str = "") -> dict[str, Any]:
         """TD3 alone for n_sims simulations in that space (< 200 in total). Returns the best design (changes vs
-        nominal) and which parameters its improvements moved."""
+        nominal), its spec margins and which parameters its improvements moved."""
         return call("run_rl", n_sims=n_sims, reason=reason)
 
     @server.tool()
