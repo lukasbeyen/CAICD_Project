@@ -1863,3 +1863,21 @@ simulations in total.
   - All 161 pass.
 
 **Verification:** the mutation check (no buffer rebuild, no budget in `run_rl`, no forced warm start): each is caught.
+
+### 2026-11-06 14:05 — 4.T7: harness v3.1 test run (Claude Code as tutor + reviewer)
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-tutor2/`. The `setup_rl` is byte for byte the v3 run's.
+
+**Result:**
+- **199 simulations** (the budget, enforced), 7 tool calls.
+- `setup_rl` → 0.606; `run_rl(80)` → 0.646.
+- **`refine` → 0.686**: Cc 0.3 pF + an I2 cut (mn5 10, mp3 12). The cut alone fails UGBW and Cc's UGBW gain makes it
+  pass: a coupled move the RL hadn't found. The space was re-centred (mp3/mn4 at their range edges); 87 transitions
+  were kept.
+- `run_rl(98)` → no improvement (the design sits on the PM 60.04° and UGBW 101.3 MHz limits).
+- Final: 213 µA, 822 µm²; 124 of 177 designs met all specs.
+
+**Tokens:** ≈ 46k input + 2.9k output, 15 turns (v3 ≈ 30k; v2 ≈ 126k; v1 ≈ 244k).
+
+**Comparison:** v3.1 gives the **best FoM of all versions** (0.686 vs v1's 0.684, v2's 0.677, v3's 0.650) at ~1/5 of
+v1's tokens. The deciding step was the LLM's educated improvement between the RL runs. The RL's own share: 0.606 →
+0.646 in run 1, nothing in run 2 (the design was constraint-bound).
