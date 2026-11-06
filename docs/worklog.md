@@ -1802,3 +1802,23 @@ step depends on its number of grid points in the range: 5 points ≈ 1 % (practi
   ≤ 2 kB, agents ≤ 1.5 kB, skills ≤ 3.5 kB), the config.
 
 **Fixed context:** 8.3 kB (v2 9.9 kB, v1 ≈ 22 kB). All 157 tests pass.
+
+### 2026-11-06 13:20 — 4.T4: harness v3 test run (Claude Code plays tutor + reviewer); tokens
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-tutor/` (README with all the tables, the design log, the
+history, the sizes).
+
+**The session: 5 tool calls, 146 simulations.**
+- **The tutor started from the failing first hand design** (UGBW 67 MHz, FoM −0.17).
+- **Space:** 6 free parameters (mn4, mn5, mp3, mn1, Cc, Rc, 9–11 grid points each), 14 fixed.
+- **Warm-up:** 15 designs. The table shows mn4 as the lever (+1 finger: UGBW +24 %) and that Cc moves PM; the
+  balanced coupled moves meet all specs (0.606).
+- **`run_rl(130)`: 0.606 → 0.650** (6 improvements), all by the RL.
+- **Final:** FoM 0.649, 223 µA, 850 µm², PM +9 %, UGBW +5.4 %. 88 of 118 distinct designs met all specs.
+
+**Tokens** (the same turn model):
+- **≈ 30k input + 2.5k output, 13 turns**: −88 % vs v1 (≈ 244k), −76 % vs v2 (≈ 126k);
+- tutor 18k, reviewer 8k, orchestrator 3.4k.
+
+**Trade-off:** fewer tokens, the RL really optimizes and finds many feasible designs (a rich Pareto set). But the
+best FoM (0.650, 146 sims) is a little below the LLM-only results (0.677 in 7 sims, 0.684 in 16 sims), and it needs
+more simulations.
