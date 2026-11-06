@@ -2597,3 +2597,36 @@ read; judgement stops with reasons).
   - the exact launch setup (lanes, the locked-down `claude` command).
 
 Report material: a section "The final flow: RL → LLM → RL" with the development and evaluation tables.
+
+### 2026-11-06 — 4.v4.1: evaluation of LLM first → big RL on seeds 3, 4, 5, compared with RL → LLM → RL
+**Record:** `CAD/harness/sessions/2026-11-06_eval-llm-first-big-rl-seeds345/`, prompt
+`CAD/harness/prompts/llm_first_big_rl_evaluated.txt` (commit `6e89765`).
+
+**Result:**
+
+| seed | LLM first → big RL | RL → LLM → RL |
+|---|---|---|
+| 3 | 0.655 | 0.702 |
+| 4 | 0.671 | 0.616 |
+| 5 | 0.677 | 0.698 |
+| **mean** | **0.668 ± 0.011** | **0.672 ± 0.049** |
+
+**At equal simulation counts** (mean best so far):
+
+| after | LLM first | RL first |
+|---|---|---|
+| 200 sims | 0.61 | −0.45 |
+| 500 sims | 0.62 | 0.03 |
+| 1000 sims | 0.65 | 0.65 |
+| 2000 sims | 0.67 | 0.67 |
+
+**Tokens:** both 15.7 requests per session on average. LLM first reads more from the cache (425k vs 368k) and
+writes about twice the output (15k vs 8k).
+
+**Checks:** clean; seed 4 used 7 hand simulations (limit 6).
+
+**Interpretation:**
+- A tie at ~2000 simulations.
+- LLM first is better anytime (a good design after ~200 sims) and far more consistent.
+- RL first has the higher peaks and the cheaper reasoning.
+- In LLM first, train 1 (warm start) gave +0.03 to +0.12, and train 2 adds little.

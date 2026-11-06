@@ -376,6 +376,37 @@ for tuning:
 
 The LLM acts only twice, so the token cost stays low.
 
+**The comparison flow on the same unseen seeds: LLM first, then one big RL.** Prompt
+`CAD/harness/prompts/llm_first_big_rl_evaluated.txt`, records
+`CAD/harness/sessions/2026-11-06_eval-llm-first-big-rl-seeds345/`:
+1. a nominal from the equations, ≤ 6 `simulate`;
+2. `warmup(200)` + 2 × `train(1000)`;
+3. a polish;
+4. a judgement stop;
+5. the reviewer.
+
+| | RL → LLM → RL | LLM first → big RL |
+|---|---|---|
+| final FoM, seeds 3 / 4 / 5 | 0.702 / 0.616 / 0.698 | 0.655 / 0.671 / 0.677 |
+| **mean ± sd** | **0.672 ± 0.049** | **0.668 ± 0.011** |
+| best so far after 200 / 500 / 1000 sims (mean) | −0.45 / 0.03 / 0.65 | **0.61 / 0.62 / 0.65** |
+| simulations | ≈ 2150 | ≈ 2480 |
+| requests / cache read / output per session (mean) | 15.7 / 368k / 7.9k | 15.7 / 425k / 15.1k |
+| wall time (3 in parallel) | 9–10 min | 10–12 min |
+
+**Reading:**
+- The two flows end level (the difference is far inside the spread).
+- **LLM first is faster and more consistent:** a good design after ~200 simulations, and a spread of only ±0.011.
+  Even its weakest hand phase (seed 4: still failing after 7 simulations) was rescued by the warm-up (0.618).
+- **RL first reaches the highest peaks** (0.702, 0.698) and needs about half the output tokens: refining a measured
+  design is shorter reasoning than designing from scratch. But it does nothing useful for its first ~1000
+  simulations.
+- The choice follows from the budget:
+  - with fewer than ~1000 simulations, LLM first wins clearly;
+  - at ~2000, they are equal;
+  - for the most consistent result, LLM first;
+  - for the fewest tokens, RL first.
+
 ### Overview of all harness runs (which are usable for the report)
 Every run used real ngspice (TT corner, 27 °C). They differ in who played the agents and whether tool calls were
 replayed. The records are in `CAD/harness/sessions/`.
