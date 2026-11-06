@@ -10,7 +10,7 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 - Milestones 1 and 2 on `main` (PR #8).
 - Milestone 3 on `feat/td3` (not pushed).
 - Milestone 4 on `feat/m4-harness` (from `feat/td3`). Both merged with `main` (Lukas's M3) on 6 Nov and pushed as
-  **`einstein_LLM`**. **Current branch: `feat/m4-template`** (harness v4.1: only the course template's tools + the warm-up and warm start inside our TODOs; from `feat/m4-tutor` = v3.2; not pushed; 135 tests pass).
+  **`einstein_LLM`**. **Current branch: `feat/m4-template`** (harness v4: only the course template's tools + the warm-up around the LLM's design inside our TODO; the v4.1 warm start reverted; from `feat/m4-tutor` = v3.2; not pushed; 133 tests pass).
 - Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
 - Deadline: Sun 8 Nov 2026, 23:59.
 
@@ -2226,3 +2226,21 @@ it and give its simulations to the warm-up.
   harness versions.
 - Within the harness's < 200 budget it can't get there.
 - One seed only.
+
+### 2026-11-06 — 4.v4: the actor warm start removed again
+**Goal:** Brent: take the warm start out of `train` (and the second warm-up, if it never helped).
+
+**What changed** (branch `feat/m4-template`, commit `4e56f63` = `git revert 5c8824f`, no history rewrite):
+- `sizing_tools.py`, `tests/test_sizing_tools.py` and the `rl-tutoring` skill are back to v4. The code and prompts
+  are byte-identical to `3d85360`, the tested v4.
+- `train` is again the template's plain TD3 (our TODO implementation without the clone).
+- The **second warm-up** was only part of a proposed "lean" flow and was never tested or put into a prompt, so
+  there was nothing to remove. The prompts keep one `warmup(100)`, still drawn around the LLM's best design (it
+  gave +0.04 in the v4 run).
+
+**Decisions:** the experiments that used the warm start (the v4.1 A/B, `train(200)`, `train(2000)`) stay recorded
+in `harness/sessions/` as experiments; their READMEs say they used the warm start.
+
+**Verification:** 133 tests pass; `git diff 3d85360 HEAD` on the code and the prompts is empty.
+
+**For Brent:** the harness is v4 as tested: FoM 0.678, 189 sims, ≈ 165k tokens (turn model).

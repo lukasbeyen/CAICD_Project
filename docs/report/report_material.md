@@ -497,6 +497,20 @@ seed and calls (`CAD/harness/sessions/2026-11-06_claude-code-template-warmstart/
 TD3 needs far more than 60 steps (milestone 3: thousands of simulations); within the 200 budget, the gains come from
 the warm-up around the LLM's design and from the LLM's refining.
 
+**Experiments with longer training** (warm start; `CAD/harness/sessions/2026-11-06_experiment-train200/`,
+`.../2026-11-06_experiment-train2000/`; one seed):
+- `train(200)`: a U-shape. The actor drifts to ~120 grid steps from the design, then comes back to ~34; no
+  improvement.
+- `train(2000)` (2313 simulations): TD3 settles ≈ 21–30 grid steps from the LLM's region and improves steadily:
+  - the median reward −2.1 → −0.3;
+  - the feasible designs per 100 steps 2 → 20;
+  - it first beats the warm-up's 0.646 at training step 1515;
+  - its best is **0.699** (192 µA, 902 µm²), above all harness versions.
+- So TD3 is slow, not useless: it needs ≈ 1500 training steps here.
+
+**Final choice:** the warm start was removed again (Brent), so `train` is the template's plain TD3. The final
+harness is v4 as tested (0.678, 189 simulations).
+
 ---
 
 ## Tests overall
