@@ -2305,3 +2305,30 @@ v3.2's agy session: 58.8k + 207.5k + 13.2k.
 - The warm-up then climbs fast from there. With a good region in its buffer, TD3 learns visibly.
 - Compared with milestone 3's TD3 alone: 0.684 after 3724 sims / 13.3 min on its best seed; this run reached 0.674
   after 1069 sims / 4.2 min.
+
+### 2026-11-06 — 4.v4: a fresh, locked-down Claude Code session with the RL-first flow (Brent)
+**Record:** `CAD/harness/sessions/2026-11-06_claude-code-fresh-rl-first/` (commit `b62fd8b`; the Claude Code
+transcript stays in `~/.claude/projects/…CAD/76f504c5…jsonl`, not copied).
+
+**Setup:**
+- `claude --model sonnet --tools "Read,Glob,Grep" --strict-mcp-config --mcp-config <cad only>`, with reading
+  `harness/sessions/`, `runs/` and `docs/` denied;
+- the RL-first flow in the prompt (≈ 2000-sim budget).
+
+**Checks:** it read only `AGENTS.md`, the agent prompts and the skills; it followed the flow; the stop rule fired
+(PM +2.8 %).
+
+**Result:**
+- RL 1 is identical to my x2 experiment: −0.025.
+- LLM 1 (5 sims): **0.333** (better than my 0.193).
+- The warm-up: 0.597; `train(800)`: **0.601**.
+- Final 0.601 (369 µA, 503 µm²). 1985 sims, 10.7 min wall time, 1.8 min of it LLM.
+
+**Tokens:** 16 requests; 1.6k input + 501k cache read + 39k cache write + 8.3k output; $0.29 at API prices. The
+agy v4 session had 32 calls and 85k + 629k + 17k.
+
+**Interpretation:**
+- RL-first halves the LLM calls compared with agy's LLM-first run.
+- A better first LLM step ended lower than my weaker one. It handed over a design with UGBW binding (+2.9 %), while
+  mine had large margins (UGBW +57 %, PM +38 %) and gave the warm-up room to climb.
+- One run each: suggestive, not proven. If it holds, the LLM step should hand over margin, not only reward.
