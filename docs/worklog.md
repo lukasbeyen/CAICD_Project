@@ -1822,3 +1822,8 @@ history, the sizes).
 **Trade-off:** fewer tokens, the RL really optimizes and finds many feasible designs (a rich Pareto set). But the
 best FoM (0.650, 146 sims) is a little below the LLM-only results (0.677 in 7 sims, 0.684 in 16 sims), and it needs
 more simulations.
+
+### 2026-11-06 13:25 — 4.T5: report material for v3
+`docs/report/report_material.md` §4, new subsection "Version 3: the LLM as the RL's tutor": why, what changed (the
+grid-point rule), the test run, a comparison table of v1/v2/v3 (tokens, simulations, best FoM, who found it), and the
+honest reading. Test table: 157 tests.

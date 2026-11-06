@@ -362,10 +362,44 @@ every log entry itself. And the LLM and the RL never met.
   around a converged, constraint-bound design, adds nothing with the course's TD3 settings. It found feasible
   alternatives, but no better ones.
 
+### Version 3: the LLM as the RL's tutor (branch `feat/m4-tutor`)
+**Why:** v2 still cost ≈ 126k tokens, and its RL found nothing, because the template noise moves all 20 parameters
+across their full ranges. New role: **the LLM is the RL's tutor, not its rival.** It uses its circuit knowledge to
+set up the RL's job, and the RL optimizes.
+
+**What changed** (`tutor_tools.py`, `TutorExperiment` on top of `HybridExperiment`): one tool call,
+`setup_rl(nominal, search_space, warmup)`.
+- **The nominal:** a hand design from the equations.
+- **The search space:** only the parameters that matter are free, each with ~11 grid points around the nominal; the
+  rest are fixed. Only the RL env's grid is narrowed, so the template noise σ 0.1 becomes local. The design rule: the
+  chance that a free parameter moves ≥ 1 grid step per RL step is ≈ 1 % with 5 grid points, ≈ 30 % with 11, ≈ 60 %
+  with 21.
+- **The warm-up:** 10–20 designs with a purpose each (a one-at-a-time sensitivity study + balanced coupled moves). All
+  of them become TD3 experience, and the tutor gets a sensitivity table back.
+- **Then `run_rl(n)`:** TD3 alone in that space, in bursts starting at the current best design.
+- **The harness:** 2 agents (tutor, reviewer) + a 2-step orchestrator; `AGENTS.md` 1.5 kB; 4 tools (1.7 kB).
+
+**Test run** (Claude Code playing the agents; `CAD/harness/sessions/2026-11-06_claude-code-tutor/`):
+- **5 tool calls, 13 model turns, ≈ 30k input tokens** (v1 ≈ 244k, v2 ≈ 126k).
+- **From a failing nominal** (FoM −0.17), the tutor's balanced warm-up designs meet all specs (0.606).
+- **The RL improves alone** to **0.650** in 130 simulations, and 88 of 118 distinct designs meet all specs.
+
+| | tokens (input) | simulations | best FoM | found by |
+|---|---|---|---|---|
+| v1 (LLM designs) | ≈ 244k | 16 | 0.684 | the LLM |
+| v2 (LLM + RL bursts) | ≈ 126k | 97 | 0.677 | the LLM |
+| **v3 (LLM tutors the RL)** | **≈ 30k** | 146 | 0.650 | the RL |
+
+**Reading:**
+- v3 is 8× cheaper in tokens, and the RL really optimizes in a space the LLM made well-conditioned, which gives many
+  feasible designs.
+- It costs more simulations and ends slightly below the LLM-only best.
+- A feasibility check (T0, Python only) gave 0.658 / 0.664 from a better nominal.
+
 ---
 
 ## Tests overall
-`cd CAD && python -m pytest -q`: **145 passed** (branch `feat/m4-hybrid`):
+`cd CAD && python -m pytest -q`: **157 passed** (branch `feat/m4-tutor`):
 
 | file | tests |
 |---|---|
@@ -381,3 +415,5 @@ every log entry itself. And the LLM and the RL never met.
 | `test_mcp_server.py` | 1 |
 | `test_hybrid_tools.py` | 14 |
 | `test_hybrid_mcp_server.py` | 1 |
+| `test_tutor_tools.py` | 11 |
+| `test_tutor_mcp_server.py` | 1 |
