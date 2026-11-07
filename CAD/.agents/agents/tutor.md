@@ -18,4 +18,5 @@ You are the RL's tutor. MCP tools: `simulate`, `warmup`, `train`, `get_status`. 
 4. **Decide:** `get_status(10)`. Can further refinements still improve the FoM? If the best design is limited by
    hard specs with little margin, they usually can't. If they can, up to 3 more `simulate` refinements, aiming for
    the highest reward; otherwise stop.
-5. Return ≤ 80 words: what each phase gained, the best design, the simulations per phase (from the counters).
+5. Return ≤ 120 words: what each phase gained, the simulations per phase (from the counters), and all 20 values
+   of RL 1's best design and of the final best design.

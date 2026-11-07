@@ -2824,3 +2824,26 @@ repo (`--disallowedTools Read(//<repo>/**)`).
 **Verification:** test lane in the scratchpad: a Haiku `claude -p` in it lists the subagents `tutor` and `reviewer`,
 the skills `opamp-design` and `rl-tutoring`, the 4 `cad` tools and AGENTS.md's title. pytest 75 passed.
 **For Brent to check:** the subagent flow itself (main → tutor → reviewer) hasn't run end to end yet, in either tool.
+
+### 2026-11-07 — 4.harness: first end-to-end subagent run (Claude Code, lane cc1, seed 3)
+**Goal:** check the final packaging (session_prompt.md → main → tutor → reviewer, `new_lane.sh`).
+**Result:** the flow is exact: warmup 100 + train 800 (990 with resets), 5 simulate, warmup 200 + train 800, judgement
+stop; 2095 sims. Main agent delegated to `tutor` then `reviewer` (no own tool use). FoM 0.7016 (seed 3: agy 0.705,
+Claude Code 0.702 with the one-agent prompt). RL 1 found no feasible design (best 0.015, PM 59.6°); the 5th LLM
+refinement gave the first feasible one (0.678); RL 2 → 0.7016. Time 16.6 min (vs 9–10), mostly the refinement phase
+(8 min); tokens 21 calls · 89k new · 483k cached · 39k out (tutor 37k out, vs 6–9k before).
+**Problem:** the reviewer's parameter diff is wrong: it calls the LLM design "RL-1 best", says cap unchanged at 0.7 pF
+(final 0.6 pF), mn3 11→11 (13→11), wn3 1.0→1.0 (0.75→1.0), misses wn1 0.75→0.5. Cause: the reviewer only sees the
+tutor's ≤ 80 words + get_status(10); RL 1's best isn't in the top 10 and the tutor's return has no full design.
+**Open:** fix reviewer.md / tutor.md return (ask Brent first).
+
+### 2026-11-07 — 4.harness: the reviewer gets the data for its comparison; why the cc1 run was slow
+**What changed:** `tutor.md` step 5: return ≤ 120 words (was 80) incl. all 20 values of RL 1's best and of the final
+design. `reviewer.md`: "Take every parameter and spec value from these two, never from memory"; the diff is against
+RL 1's best "in the tutor's return". tutor.md 1681 B, reviewer.md 943 B (limit 1800).
+**Why the cc1 run took 16.6 min instead of 8–10:** not the prompt. The first 990 simulations are identical to the
+seed-3 evaluation run (deterministic). The difference is the model: the evaluation used `--model sonnet` =
+**claude-sonnet-5-5** (6k output tokens in total); cc1 used `claude-sonnet-4-6` (set in `new_lane.sh` to match agy),
+which thought ≈ 6k tokens / ≈ 90 s before each of its 5 `simulate` calls (37k output). It also probed single steps
+(Rc, mn5, mp3) where Sonnet 5.5 fixed PM in 2 sims. agy with Sonnet 4.6 (seed 3, no subagents) took 9.9 min.
+**Verification:** pytest 75 passed.
