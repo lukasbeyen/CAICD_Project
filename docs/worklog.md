@@ -6,12 +6,12 @@ and the FoM notes `docs/fom.md` are Brent's local notes and not in the repo; the
 `circuit_env.py` `reward_computation`.)
 
 ## Status
-**Where we are (Thu 5 Nov, evening):** all 4 milestones implemented and tested (129 tests pass); the report is next.
-- Milestones 1 and 2 on `main` (PR #8).
-- Milestone 3 on `feat/td3` (not pushed).
-- Milestone 4 on `feat/m4-harness` (from `feat/td3`). Both merged with `main` (Lukas's M3) on 6 Nov and pushed as
-  **`einstein_LLM`**. **Current branch: `feat/m4-template`** (harness v4: only the course template's tools + the warm-up around the LLM's design inside our TODO; the v4.1 warm start reverted; from `feat/m4-tutor` = v3.2; not pushed; 133 tests pass).
-- Report material per section: `docs/report/report_material.md` (figures in `docs/report/figures/`).
+**Where we are (Sat 7 Nov):** all 4 milestones implemented; 75 tests pass. **Current branch: `best_harnass`**
+(contains all of `main`; `acdf990` + `cdbae39` not pushed yet). Harness = RL → LLM → RL with tutor + reviewer
+subagents (`session_prompt.md`), lanes via `harness/new_lane.sh`; first end-to-end run (Claude Code, seed 3): 0.7016.
+Left: the final agy run (Lukas) + its session folder / BEST_RUNS row / harness-vs-RL comparison; `Solutions/` from
+Lukas's run; root `README.md` with run instructions (shared file: ask Lukas); PR `best_harnass` → `main`; report;
+the zip. (The milestone lists below date from 5 Nov; the test counts are now 75 in total.)
 - Deadline: Sun 8 Nov 2026, 23:59.
 
 **Milestone 1: simulator interface** (PDF §1), on `main`
@@ -2847,3 +2847,30 @@ seed-3 evaluation run (deterministic). The difference is the model: the evaluati
 which thought ≈ 6k tokens / ≈ 90 s before each of its 5 `simulate` calls (37k output). It also probed single steps
 (Rc, mn5, mp3) where Sonnet 5.5 fixed PM in 2 sims. agy with Sonnet 4.6 (seed 3, no subagents) took 9.9 min.
 **Verification:** pytest 75 passed.
+
+### 2026-11-07 — submission: `final_CAD/`, the clean project folder for the TAs (part 1: code, tests, README)
+**Goal:** Brent: a separate folder with only clean, runnable code + tests + README + the final results (and the seed
+evaluations), no logs/history/worklogs; committed, finished once Lukas's runs are in. `CAD/` stays the dev folder.
+**What:** `final_CAD/` (repo root) = `CAD/` without `analysis/`, `harness/`, `runs/`, `no_backup/`, `output_figs/`,
+`solutions/`, `pytorch_tutorial.ipynb`, `unit_test.py` (Lukas's, still in CAD/), `utils/save_response.py` (unused).
+- `circuit_env.py`: `log_design` (designs.csv) removed with its 2 calls and `import csv` — only our analysis scripts
+  read designs.csv. Kept: `finalize` (the course never calls `solutions2pareto`/`save_solutions_csv`, checked in the
+  course .py files and the SAC .so's: without it no Pareto plot), the feasible-netlist copy.
+- tests rewritten without designs.csv: `test_env.py` (timeout → `engine.timed_out`; counting → `counter` +
+  `reward_history`; real sim → `counter`), `test_runner.py` (budget → `counter`; same seed → `env.designs`, recorded
+  by wrapping `env.evaluate` in the fake-env factory).
+- `session_prompt.md` at the folder root; `.agents/mcp_config.json` → final_CAD paths; AGENTS.md's "never read
+  earlier results" list → `results/`, `runs/`, `solutions/`, `../Solutions/` (1965 B).
+- new `README.md` (for the TAs) and `requirements.txt` (the 9 imported packages, not the shared 100-line freeze).
+- `results/harness/`: the 6 evaluation histories (rl_llm_rl / llm_first_big_rl × seeds 3–5); their prompts left out
+  (they reference the old tutor.md, not in final_CAD), the flows described in the README.
+- `Solutions/` stays NEXT TO final_CAD (as the PDF's zip lists 3 items; inside it would collide with the runtime
+  `solutions/` on macOS).
+**Verification:** a copy in the scratchpad: pytest 75 passed (10 s); a real `td3_runner.py --max_sims 120` ran clean
+(run folder, plots, clean.sh). 8.3 MB.
+**Part 2 (when Lukas's files arrive):** `results/td3/` (final runs per seed), SAC baseline, the final agy session,
+figures (made with `CAD/analysis/`), `../Solutions/` (portable paths), the README's TD3 row.
+**Update (Brent):** final_CAD is NOT pushed for now: first the regular CAD/ goes to `best_harnass` for Lukas; the TA
+clean-up comes after his runs. The final_CAD commit was taken off `best_harnass` (unpushed, `git reset --mixed`);
+it lives on as the local folder `final_CAD/` (in `.git/info/exclude`) and the local branch `final_cad_snapshot`
+(`b81ae5e`). Lukas's runs therefore go through `CAD/` (which also writes designs.csv).
