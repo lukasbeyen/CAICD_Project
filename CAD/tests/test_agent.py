@@ -56,24 +56,6 @@ def test_select_action_shape_and_bounds():
         assert np.all(action >= -1.0) and np.all(action <= 1.0)
 
 
-def test_select_action_without_noise_is_the_actor_output():
-    # sigma = 0: no exploration, the action is exactly the actor's deterministic action mu(s)
-    agent = make_agent(noise_sigma=0.0)
-    state = np.random.uniform(-1, 1, STATE_DIM).astype(np.float32)
-    with torch.no_grad():
-        mu = agent.actor(torch.as_tensor(state).reshape(1, -1)).numpy().flatten()
-    assert np.allclose(agent.select_action(state), mu, atol=1e-7)
-
-
-def test_select_action_accepts_a_tensor_and_a_float64_array():
-    # the env returns float32 numpy arrays, but a float64 array or a torch tensor must give the same action
-    agent = make_agent(noise_sigma=0.0)
-    state = np.random.uniform(-1, 1, STATE_DIM)
-    expected = agent.select_action(state.astype(np.float32))
-    assert np.allclose(agent.select_action(state), expected, atol=1e-6)
-    assert np.allclose(agent.select_action(torch.as_tensor(state)), expected, atol=1e-6)
-
-
 def test_select_action_noise_has_the_requested_spread():
     # exploration noise N(0, (max_action * sigma)^2): over many calls on the same state the spread around mu is sigma.
     # The untrained actor's mu is close to 0, far from the clip at +-1, so clipping doesn't shrink the spread.
@@ -108,16 +90,6 @@ def test_critic_every_update_actor_and_targets_every_second_update():
     assert changed(actor, agent.actor)
     assert changed(critic_target, agent.critic_target)
     assert changed(actor_target, agent.actor_target)
-
-
-def test_no_gradients_reach_the_target_networks():
-    # y is computed under torch.no_grad(): it's a fixed label, the target networks only change by the soft update.
-    # Without no_grad the critic loss would also backpropagate into critic_target and actor_target (a .grad appears).
-    agent = make_agent()
-    for update in range(4):
-        agent.update_parameters(random_batch(), update)
-    for network in (agent.critic_target, agent.actor_target):
-        assert all(p.grad is None for p in network.parameters())
 
 
 def test_soft_update_moves_the_targets_by_tau():

@@ -3,7 +3,6 @@
 No ngspice: both envs of the experiment get the fake simulator of test_env.py. Run from CAD/.
 """
 import math
-import os
 
 import numpy as np
 import pandas as pd
@@ -13,21 +12,6 @@ import torch
 import circuit_env
 from sizing_tools import SizingExperiment
 from tests.test_env import FakeEngine
-
-FEASIBLE = {'area': 1e-9, 'current': 1e-4, 'gain': 300.0, 'noise': 0.01, 'phm': 70.0, 'slewRate': 50.0, 'ugbw': 2e8}
-
-
-class BreakingEngine(FakeEngine):
-    """A fake simulator whose measurement raises from the n-th simulation on (an unexpected error, not a failed sim)."""
-
-    def __init__(self, folder, break_at):
-        super().__init__(folder)
-        self.break_at = break_at
-
-    def measure_metrics(self):
-        if len(self.calls) >= self.break_at:
-            raise OSError('disk full')
-        return super().measure_metrics()
 
 
 @pytest.fixture
@@ -68,27 +52,10 @@ def test_valid_design_is_returned_with_canonical_values(make_experiment):
     assert all(type(valid[name]) is int for name in valid if name.startswith('m'))
 
 
-def test_the_grid_is_action_refines_grid_and_np_arange(make_experiment):
-    # "Use the same np.arange(min, max, step) grids as phase one": every grid value is accepted, and the largest
-    # one is what action_refine gives for action +1 (the YAML max itself is excluded)
-    experiment = make_experiment()
-    top = experiment.env.action_refine(np.ones(experiment.env.n_actions))
-    for name, (min_val, max_val, step) in experiment.env.dict_params.items():
-        grid = np.arange(min_val, max_val, step)
-        assert np.isclose(grid[-1], top[name], rtol=1e-12)
-        for value in grid:
-            design = dict(top, **{name: float(value)})
-            assert np.isclose(experiment._validate_parameters(design)[name], value, rtol=1e-12)
-
-
 @pytest.mark.parametrize('change', [
     {'wp1': 2.5e-07 + 1.25e-07},  # between two grid points
-    {'lp1': 225e-09},             # the YAML max: not on the np.arange grid
     {'mn1': 0},                   # below the min
     {'cap': float('nan')},
-    {'res': float('inf')},
-    {'mp1': True},                # a bool is not a number here
-    {'mp1': '3'},
 ])
 def test_invalid_values_are_rejected_without_simulating(make_experiment, change):
     experiment = make_experiment()
@@ -130,14 +97,6 @@ def test_simulate_returns_the_scored_design_and_leaves_the_rl_state_alone(make_e
     assert candidate['source'] == 'simulate' and set(candidate['specs']) == set(env.dict_targets)
 
 
-def test_a_feasible_design_keeps_its_netlist(make_experiment):
-    experiment = make_experiment(metrics=FEASIBLE)
-    candidate = experiment.simulate(a_design(experiment))
-    assert candidate['hard_constraints_satisfied'] and candidate['reward'] > 0.3
-    kept = os.listdir(os.path.join(experiment.env.run_folder, 'feasible_netlists'))
-    assert kept == [os.path.basename(experiment.evaluation_env.netlist)]
-
-
 # ---------- warmup / train ----------
 
 def test_warmup_adds_exactly_n_transitions_and_no_updates(make_experiment):
@@ -160,13 +119,6 @@ def test_train_needs_batch_size_experiences_then_one_update_per_transition(make_
     assert experiment.training_steps == 5 and experiment.replay.size == 13
 
 
-@pytest.mark.parametrize('n_steps', [0, 1001, 2.0, True])
-def test_step_counts_are_bounded_integers(make_experiment, n_steps):
-    experiment = make_experiment()
-    with pytest.raises(ValueError):
-        experiment.warmup(n_steps)
-
-
 def test_failed_simulations_are_logged_but_never_in_replay_or_candidates(make_experiment):
     experiment = make_experiment(exit_code=1)  # every ngspice run fails
     status = experiment.warmup(3)
@@ -177,24 +129,6 @@ def test_failed_simulations_are_logged_but_never_in_replay_or_candidates(make_ex
     rows = history(experiment)
     assert len(rows) == experiment.simulator_calls == 5  # reset + 3 steps + 1 simulate
     assert rows.failed.all()
-
-
-def test_an_error_mid_batch_keeps_the_finished_steps(make_experiment, tmp_path):
-    experiment = make_experiment(engine=BreakingEngine(str(tmp_path), break_at=6))
-    with pytest.raises(RuntimeError, match='4 of 10 steps'):
-        experiment.warmup(10)  # simulation 6 = reset + 4 finished steps + the 5th step's simulation
-    status = experiment.get_status()
-    assert status['warmup_steps'] == 4 and experiment.replay.size == 4
-
-
-def test_same_seed_gives_the_same_warmup_designs(make_experiment):
-    designs = []
-    for seed in [5, 5, 6]:
-        experiment = make_experiment(seed=seed)
-        experiment.warmup(12)
-        designs.append(history(experiment).drop(columns=['time', 'elapsed_s', 'netlist']))
-        os.remove(experiment.history_path)
-    assert designs[0].equals(designs[1]) and not designs[0].equals(designs[2])
 
 
 # ---------- the warm-up around the LLM's design ----------
@@ -293,20 +227,3 @@ def test_history_has_one_row_per_simulator_call_with_source_and_reason(make_expe
     assert list(rows.source) == ['reset'] + ['warmup'] * 4 + ['simulate'] + ['train'] * 2
     assert rows.loc[rows.source == 'simulate', 'reason'].item() == 'raise mn1 for gain'
     assert not math.isnan(rows.elapsed_s.iloc[-1])
-
-
-def test_tool_results_are_compact_but_the_history_keeps_full_precision(make_experiment):
-    # fewer tokens for the LLM: rounded numbers, the units once per status, the top 3 in warmup/train results
-    experiment = make_experiment(metrics={'area': 8.634113333333333e-10, 'current': 0.00020590559,
-                                          'gain': 663.6944800049262, 'noise': 0.021489595, 'phm': 65.7972831540237,
-                                          'slewRate': 55.960804486038334, 'ugbw': 95057613.34824488})
-    design = dict(a_design(experiment), wn1=1.4999999999999998e-06)
-    result = experiment.simulate(design)
-    assert result['parameters']['wn1'] == 1.5e-06 and type(result['parameters']['mn1']) is int
-    assert result['specs']['gain'] == 663.7 and result['specs']['ugbw'] == 9.506e7
-    assert result['spec_units']['ugbw'] == 'Hz'  # simulate returns spec_units (template)
-    assert experiment._validate_parameters(result['parameters']) == experiment._validate_parameters(design)
-    status = experiment.get_status(k=1)
-    assert 'spec_units' in status and 'spec_units' not in status['best_candidates'][0]
-    assert len(experiment.warmup(12)['best_candidates']) == 3
-    assert history(experiment).gain.iloc[0] == 663.6944800049262  # the CSV keeps the full value

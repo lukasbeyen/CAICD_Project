@@ -1,7 +1,7 @@
 """Tests for ngspice_interface/dut_testbench.py: the metric calculations.
 
-Synthetic data with known answers checks the math of each measurement; the mid-range design checks
-that a real simulation runs end-to-end; four real designs are compared with ngspice's own meas.
+Synthetic data with known answers checks the math of each measurement; four real designs are compared
+with ngspice's own meas, and the TAs' five reference designs with their measured values.
 Run from CAD/ (the course code builds its paths from os.getcwd()).
 """
 import os
@@ -142,16 +142,6 @@ def test_no_crossing_gives_zero_ugbw_and_pm():
     assert dut.find_phm(FREQ, poles(0.5, 3e3)) == 0.0
 
 
-@pytest.mark.parametrize('n_points', [2, 3])
-def test_ugbw_too_few_ac_points_is_zero_without_exception(n_points):
-    # the cubic spline behind find_ugbw needs 4 points; fewer must give 0, not a scipy error
-    dut = dut_testbench.DUT(YAML_PATH)
-    freq = np.array([1e3, 1e6, 1e9])[:n_points]
-    vout = np.array([100.0, 0.1, 0.001])[:n_points] + 0j
-    assert dut.find_ugbw(freq, vout) == 0.0
-    assert dut.find_phm(freq, vout) == 0.0
-
-
 # ---------- slew rate on synthetic transient data ----------
 
 def trapezoid(time, v_low, v_high, t_rise_start, rise_slope, t_fall_start, fall_slope):
@@ -183,48 +173,6 @@ def test_slew_rate_ignores_the_falling_edge():
     assert dut.find_slew_rate(time, trapezoid(time, 0.0, 1.2, 0.53e-6, 4e6, 5.51e-6, 1e6), vdd=VDD) == pytest.approx(4.0, rel=1e-6)
 
 
-@pytest.mark.parametrize('time, signal', [
-    ([], []),                                      # empty
-    ([0.0], [0.6]),                                # 1 sample
-    ([0.0, 1e-6], [0.0, 1.2]),                     # 2 samples
-    ([0.0, 1e-6, 2e-6], [0.0, 1.2, 0.0]),          # 3 samples
-    (np.arange(10) * 1e-6, np.zeros(9)),           # mismatched shapes
-], ids=['empty', '1_sample', '2_samples', '3_samples', 'mismatched'])
-def test_slew_rate_bad_input_is_zero_without_exception(time, signal):
-    dut = dut_testbench.DUT(YAML_PATH)
-    assert dut.find_slew_rate(time, signal, vdd=VDD) == 0.0
-    assert dut.slew_rate_levels is None  # rejected before any level is computed
-
-
-def test_slew_rate_output_starting_high():
-    # an output that starts high falls first: the first rising edge comes after that fall
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 30e-6, 50e-9)
-    vout = 1.2 - trapezoid(time, 0.0, 1.2, 0.53e-6, 1e6, 5.51e-6, 2e6)  # falls at 1, rises at 2 V/us
-    assert dut.find_slew_rate(time, vout, vdd=VDD) == pytest.approx(2.0, rel=1e-6)
-
-
-def test_slew_rate_output_starting_between_the_levels():
-    # the output starts at 0.6 V (between the 10 % and 90 % levels), rises to 1.2 V, falls to 0 V and rises again at
-    # 2 V/us. Its first rise crosses 90 % without crossing 10 % first: that is no complete edge. The edge that counts
-    # is the second rise, where t_90 is searched only after t_10.
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 20e-6, 5e-9)
-    vout = np.clip(0.6 + 4e6 * (time - 0.5e-6), 0.6, 1.2)                         # first rise, 0.6 -> 1.2 V
-    vout = np.where(time < 4e-6, vout, np.clip(1.2 - 4e6 * (time - 4e-6), 0.0, 1.2))  # fall to 0 V
-    vout = np.where(time < 8e-6, vout, np.clip(2e6 * (time - 8e-6), 0.0, 1.2))     # second rise at 2 V/us
-    assert dut.find_slew_rate(time, vout, vdd=VDD) == pytest.approx(2.0, rel=1e-6)
-
-
-def test_slew_rate_incomplete_rising_edge_is_zero():
-    # the output starts at 1.2 V, falls to 0 V and then only rises to 0.5 V: the 90 % level (1.08 V) is never
-    # crossed upwards, so there is no complete rising edge -> SR = 0 (a valid simulation that fails the spec)
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 10e-6, 50e-9)
-    vout = np.where(time < 1e-6, 1.2, np.where(time < 3e-6, 0.0, 0.5))
-    assert dut.find_slew_rate(time, vout, vdd=VDD) == 0.0
-
-
 def glitchy_edge(time, v_settled, rise_slope, fall_slope, v_glitch):
     # 0 V -> v_settled at rise_slope from 1 us, a short glitch up to v_glitch around 5 us (like the kick through Cc),
     # back to v_settled, then down to 0 V at fall_slope from 6 us. Slow ramps on a 5 ns grid: every 4-sample window
@@ -250,21 +198,6 @@ def test_slew_rate_glitch_above_vdd_is_capped():
     assert sr == pytest.approx(2.0, rel=1e-6)
 
 
-def test_slew_rate_cap_follows_vdd():
-    # settled at 1.0 V with a glitch to 1.3 V. With VDD = 1.0 V the cap is 0.9 V: on the edge, SR = 2 V/us.
-    # With VDD = 1.2 V the cap is 1.08 V, above the settled 1.0 V: the 90 % level (min(1.17, 1.08) = 1.08 V) is only
-    # reached by the glitch, so the rising "edge" ends at the glitch and reads far too slow.
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 10e-6, 5e-9)
-    vout = glitchy_edge(time, 1.0, 2e6, 1e6, 1.3)
-    sr = dut.find_slew_rate(time, vout, vdd=1.0)
-    assert dut.slew_rate_levels[1] == pytest.approx(0.9)
-    assert sr == pytest.approx(2.0, rel=1e-6)
-    sr = dut.find_slew_rate(time, vout, vdd=1.2)
-    assert dut.slew_rate_levels[1] == pytest.approx(1.08)
-    assert sr < 0.5
-
-
 def test_slew_rate_kick_below_ground_is_floored():
     # the output kicks down to -0.3 V just before the edge (like the feed-forward through Cc when the input steps
     # up), then rises 0 -> 1.2 V at 2 V/us. Unfloored: 10 % = -0.3 + 0.1 * 1.5 = -0.15 V, crossed when the kick
@@ -278,45 +211,6 @@ def test_slew_rate_kick_below_ground_is_floored():
     assert dut.slew_rate_levels[0] == pytest.approx(0.12)  # floored (unfloored it would be -0.15 V)
     assert dut.slew_rate_levels[1] == pytest.approx(1.05)
     assert sr == pytest.approx(2.0, rel=1e-6)
-
-
-def test_slew_rate_inside_the_rails_is_not_capped():
-    # 0.2 V -> 0.8 V: 90 % = 0.74 V is below the cap 1.08 V and 10 % = 0.26 V above the floor 0.12 V: unchanged
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 10e-6, 5e-9)
-    vout = 0.2 + glitchy_edge(time, 0.6, 2e6, 1e6, 0.6)  # "glitch" at the settled level = no glitch
-    sr = dut.find_slew_rate(time, vout, vdd=1.2)
-    assert dut.slew_rate_levels == pytest.approx((0.26, 0.74))
-    assert sr == pytest.approx(2.0, rel=1e-6)
-
-
-def test_slew_rate_degenerate_capped_swing_is_zero():
-    # the output only moves between 1.1 V and 1.3 V: 10 % = 1.12 V is above the cap 1.08 V -> no edge, 0.0, no error
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 10e-6, 5e-9)
-    vout = 1.1 + glitchy_edge(time, 0.2, 2e6, 1e6, 0.2)
-    assert dut.find_slew_rate(time, vout, vdd=1.2) == 0.0
-    # and the mirror case: an output between -0.3 V and 0.1 V, 90 % = 0.06 V is below the floor 0.12 V
-    vout = -0.3 + glitchy_edge(time, 0.4, 2e6, 1e6, 0.4)
-    assert dut.find_slew_rate(time, vout, vdd=1.2) == 0.0
-
-
-def test_slew_rate_without_vdd_raises():
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 10e-6, 5e-9)
-    with pytest.raises(ValueError, match='vdd'):
-        dut.find_slew_rate(time, glitchy_edge(time, 1.2, 2e6, 1e6, 1.2))
-
-
-def test_slew_rate_undersampled_edge_is_underestimated():
-    # A 20 V/us edge spends only 48 ns between 10 % and 90 %, less than one 50 ns sample of the
-    # testbench's "tran 50n 30u". The interpolation then cuts the corners of the ramp: the 10 %
-    # crossing comes out too early and the 90 % crossing too late, so SR is too LOW, never too high.
-    dut = dut_testbench.DUT(YAML_PATH)
-    time = np.arange(0, 30e-6, 50e-9)
-    for slope in [10e6, 20e6, 40e6]:
-        vout = trapezoid(time, 0.0, 1.2, 0.53e-6, slope, 5.51e-6, slope)
-        assert dut.find_slew_rate(time, vout, vdd=VDD) <= slope * 1e-6
 
 
 def test_slew_rate_flat_output_is_zero():
@@ -334,22 +228,6 @@ def test_missing_output_files_is_failed(tmp_path):
     assert dut.measure_metrics() is None
 
 
-def test_empty_output_files_is_failed(tmp_path):
-    dut = make_dut(tmp_path, 'TwoStage_empty')
-    for analysis in ['tran', 'ac', 'dc', 'noise']:
-        open(os.path.join(str(tmp_path), analysis + '_TwoStage_empty.csv'), 'w').close()
-    assert dut.measure_metrics() is None
-
-
-def test_synthetic_files_are_measured(tmp_path):
-    # control for the failure tests below: well-formed files give finite metrics
-    write_outputs(str(tmp_path), 'TwoStage_ok')
-    metrics = make_dut(tmp_path, 'TwoStage_ok').measure_metrics()
-    assert metrics is not None
-    assert metrics['current'] == pytest.approx(100e-6)  # -i(vdd)
-    assert metrics['noise'] == pytest.approx(1e-3)
-
-
 def test_nan_in_output_is_failed(tmp_path):
     ac = np.column_stack([FREQ, np.real(poles(500, 3e3)), np.imag(poles(500, 3e3))])
     ac[10, 1] = np.nan
@@ -357,34 +235,7 @@ def test_nan_in_output_is_failed(tmp_path):
     assert make_dut(tmp_path, 'TwoStage_nan').measure_metrics() is None
 
 
-def test_too_short_output_is_failed(tmp_path):
-    # a transient with a single time point (e.g. ngspice aborted right after the start)
-    write_outputs(str(tmp_path), 'TwoStage_short', tran=np.array([[0.0, 0.6]]))
-    assert make_dut(tmp_path, 'TwoStage_short').measure_metrics() is None
-
-
-def test_unreadable_output_is_failed(tmp_path):
-    # rows with different numbers of columns: np.genfromtxt raises ValueError, which must become "failed"
-    write_outputs(str(tmp_path), 'TwoStage_garbled')
-    with open(os.path.join(str(tmp_path), 'tran_TwoStage_garbled.csv'), 'w') as f:
-        f.write('header\n0.0 0.6\n5e-8 0.6 0.7\n1e-7 0.6\n')
-    assert make_dut(tmp_path, 'TwoStage_garbled').measure_metrics() is None
-
-
 # ---------- real simulation ----------
-
-def test_mid_range_design_smoke(tmp_path):
-    # runs ngspice end-to-end; only checks that every metric of TwoStage.yaml comes out finite
-    dut =   dut_testbench.DUT(YAML_PATH)
-    dut.output_netlists_folder = dut.output_files_folder = dut.logs_folder = str(tmp_path)
-    netlist_path = dut.create_new_netlist(MID_DESIGN, process='TT')
-    assert dut.simulate(netlist_path) == 0
-    metrics = dut.measure_metrics()
-    assert metrics is not None
-    targets = yaml.load(open(YAML_PATH), Loader=yaml.Loader)['targets']
-    assert set(metrics) == set(targets)
-    assert all(np.isfinite(value) for value in metrics.values())
-
 
 def ngspice_meas_reference(netlist_path):
     # copy the netlist of the design, swap its control block for MEAS_CONTROL, run ngspice and read the
@@ -428,51 +279,20 @@ def load_references():
 REFERENCE_DESIGNS = load_references()
 
 
-def simulate_reference(tmp_path, ref, netlist_path=None):
-    # simulate one reference design; netlist_path replaces the testbench netlist (only for the 1 ns slew-rate test)
+@pytest.mark.parametrize('design', REFERENCE_DESIGNS)
+def test_reference_designs(tmp_path, design):
+    # all 7 metrics within 1 % of the TAs' values. Two settings matter: 27 degC (the env's pvt_corner; at the netlist
+    # default of 25 degC the gain is up to 8 % off) and the testbench's .options trtol=0.1, which makes ngspice take
+    # time steps small enough to resolve the fast slew-rate edges
+    ref = REFERENCE_DESIGNS[design]
     dut = dut_testbench.DUT(YAML_PATH)
-    if netlist_path is not None:
-        dut.netlist_path = netlist_path
     dut.output_netlists_folder = dut.output_files_folder = dut.logs_folder = str(tmp_path)
     params = {}
     for name in dut.param_names:
         value = ref['param_' + name]
         params[name] = int(value) if name.startswith('m') else value
-    # 27 degC (the env's pvt_corner): the references match there, at the netlist default of 25 degC the gain is up to 8 % off
     assert dut.simulate(dut.create_new_netlist(params, process='TT', temp_pvt=27, vdd=1.2)) == 0
     metrics = dut.measure_metrics()
     assert metrics is not None
-    return dut, metrics
-
-
-@pytest.mark.parametrize('design', REFERENCE_DESIGNS)
-def test_reference_designs(tmp_path, design):
-    # all metrics except the slew rate within 1 % of the TAs' values (the slew rate: the two tests below)
-    ref = REFERENCE_DESIGNS[design]
-    dut, metrics = simulate_reference(tmp_path, ref)
-    for name in ['area', 'current', 'gain', 'noise', 'phm', 'ugbw']:
+    for name in ['area', 'current', 'gain', 'noise', 'phm', 'slewRate', 'ugbw']:
         assert metrics[name] == pytest.approx(ref['spec_' + name], rel=0.01), name
-
-
-@pytest.mark.parametrize('design', REFERENCE_DESIGNS)
-def test_reference_slew_rate_method(tmp_path, design):
-    # The TAs' slew rate equals our 10-90 % measurement of the RISING edge on a 1 ns time grid. The testbench prints
-    # every 50 ns, too coarse for fast edges (see test_slew_rate_undersampled_edge_is_underestimated), so this test
-    # simulates a copy of the netlist with "tran 1n 30u" in tmp_path. The testbench itself is not changed.
-    ref = REFERENCE_DESIGNS[design]
-    with open(dut_testbench.DUT(YAML_PATH).netlist_path) as f:
-        text = f.read()
-    assert 'tran 50n 30u' in text
-    netlist_1ns = os.path.join(str(tmp_path), 'TwoStage_1ns.cir')
-    with open(netlist_1ns, 'w') as f:
-        f.write(text.replace('tran 50n 30u', 'tran 1n 30u'))
-    dut, metrics = simulate_reference(tmp_path, ref, netlist_1ns)
-    assert metrics['slewRate'] == pytest.approx(ref['spec_slewRate'], rel=0.01)
-
-
-@pytest.mark.parametrize('design', REFERENCE_DESIGNS)
-def test_reference_slew_rate_testbench(tmp_path, design):
-    # our slewRate metric as the env sees it: the testbench (.options trtol=0.1) resolves the edges, within 1 %
-    ref = REFERENCE_DESIGNS[design]
-    dut, metrics = simulate_reference(tmp_path, ref)
-    assert metrics['slewRate'] == pytest.approx(ref['spec_slewRate'], rel=0.01)

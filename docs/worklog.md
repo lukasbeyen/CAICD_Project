@@ -2775,3 +2775,33 @@ tested fallback.
 Brent: the LaTeX files (`report_draft.tex`, `template.tex`) stay local with him, never in the repo. The two
 unpushed local commits were rebuilt into one without `report_draft.tex` (soft reset to `origin/best_harnass`
 `9c9e72c`; nothing pushed was rewritten). Both files are in `.git/info/exclude`. Pushed to `best_harnass`.
+
+### 2026-11-07 — M4 report: block diagram of the harness
+`report_figures/harness_diagram.py` (local, in `.git/info/exclude` like the LaTeX files) draws the harness with
+matplotlib and writes `harness_diagram.pdf` (for the report) and `.png` (preview). Rows: prompt → main agent
+(`AGENTS.md`) → designer; tutor (the 4 steps RL → LLM → RL → decide, the two skills) and reviewer with the returns
+between the agents; the MCP server with the 4 tools; `sizing_tools.py` → TD3 ⇄ CircuitEnv ⇄ ngspice, `simulate`
+outside the RL loop. Not TikZ: there is no LaTeX in the VM to check it, the PNG was checked visually.
+Simplified on Brent's request: 6 blocks (main agent, tutor with its skills, reviewer, MCP tools, RL sizer, ngspice)
+and only the arrows between them (task / summaries, which tools each agent uses).
+
+### 2026-11-07 — tests: cleanup to what proves each milestone (135 → 75 cases, 30 → 15 s)
+**Goal:** a test suite Brent can explain test by test in the oral exam: no duplicates, no exotic edge cases.
+**What changed** (only `CAD/tests/`, no production code; branch `best_harnass`):
+- `test_measure.py` (M1) 30 → 13 functions (20 cases): kept the analytic 1/2/3-pole cases (`np.unwrap`), no crossing,
+  the SR ideal ramp, rising edge only, the VDD cap and the ground floor, flat output, missing/NaN files, ngspice's
+  `meas` (4 designs), the TA references. The reference test now checks all 7 metrics in one simulation (the separate
+  slew-rate test simulated the same designs again; the 1 ns method test is gone). Dropped: 1–3-sample inputs,
+  outputs starting high/between the levels, incomplete edges, VDD-dependent cap, degenerate swings, no-VDD error,
+  undersampling, 3 more broken-file variants, the mid-range smoke test.
+- `test_wrapper.py` 5 → 4 (the output-folder test).
+- `test_env.py` (M2) 25 → 17: dropped 500 random grid actions, the unclassified-constraint error, obs dtype, the
+  ngspice-error duplicate, the PVT-corner call, plot counting, the seeded reset, gymnasium's env checker (+ adapter).
+- `test_agent.py` (M3) 11 → 8 (noise-free action, tensor/float64 input, no gradients into targets).
+- `test_runner.py` 4 → 3 (numeric defaults). `test_sizing_tools.py` (M4) 20 → 14 (+ invalid cases 7 → 3).
+- `test_harness_vs_rl.py` deleted (a report analysis script, not a milestone; the script stays).
+- Lukas's `test_reference_rewards.py` untouched.
+**Note:** the edge-case guards in `dut_testbench.py` stay (the runs used them); they just have no own test now.
+**Verification:** pytest 75 passed in 15 s.
+**For the report** (Brent's local draft): M1 = `test_measure.py` 20 + `test_wrapper.py` 4; M2 = `test_env.py` 17 +
+Lukas's 1.

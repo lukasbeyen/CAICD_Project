@@ -46,14 +46,6 @@ def designs(env):
     return pd.read_csv(os.path.join(env.run_folder, 'designs.csv'))
 
 
-def test_the_5_hyperparameters_have_numeric_defaults(monkeypatch):
-    # the course runner had "???" as defaults: argparse stopped with "invalid float value: '???'"
-    args = default_args(monkeypatch)
-    for name in ['noise_sigma', 'batch_size', 'w', 'pi_lr', 'q_lr']:
-        assert isinstance(getattr(args, name), (int, float)), name
-    assert args.max_sims == 5000
-
-
 def test_training_stops_exactly_at_the_simulation_budget(monkeypatch, fake_envs):
     # warm-up: 2 episodes = 20 steps = 22 simulations (every episode starts with a reset simulation).
     # Training: episodes of 11 simulations (23-33, 34-44, 45-55), then a reset (56) and one step (57): the budget
