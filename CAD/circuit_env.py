@@ -280,7 +280,7 @@ class CircuitEnv(gym.Env):
         #8. Check if the maximum steps per episode have been reached, setting the done flag if true
         done = self.episode_steps >= self.max_steps_per_episode
         #9. Every 10 steps, update the score history, also plot the learning curve, and reset the score
-        if self.env_steps % self.episode_steps == 0:
+        if self.env_steps % 10 == 0:
             self.score_history.append(self.episode_score)
             plotLearning(self.score_history, self.run_id)
             self.episode_score = 0.0
