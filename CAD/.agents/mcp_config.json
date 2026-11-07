@@ -1,10 +1,10 @@
 {
   "mcpServers": {
     "cad": {
-      "command": "/home/brentvm/projects/CAICD-shared/.venv/bin/python",
-      "args": ["/home/brentvm/projects/CAICD-shared/CAD/mcp_server.py"],
-      "cwd": "/home/brentvm/projects/CAICD-shared/CAD",
-      "env": {"PATH": "/home/brentvm/projects/CAICD-shared/.venv/bin:/usr/local/bin:/usr/bin:/bin"},
+      "command": "/home/lukas/Documents/Master/Y2/CAICD/CAICD_Project/.cad_env/bin/python",
+      "args": ["/home/lukas/Documents/Master/Y2/CAICD/CAICD_Project/CAD/mcp_server.py"],
+      "cwd": "/home/lukas/Documents/Master/Y2/CAICD/CAICD_Project/CAD",
+      "env": {"PATH": "/home/lukas/Documents/Master/Y2/CAICD/CAICD_Project/.cad_env/bin:/usr/local/bin:/usr/bin:/bin"},
       "timeoutSeconds": 600
     }
   }
