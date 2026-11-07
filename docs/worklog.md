@@ -2805,3 +2805,22 @@ and only the arrows between them (task / summaries, which tools each agent uses)
 **Verification:** pytest 75 passed in 15 s.
 **For the report** (Brent's local draft): M1 = `test_measure.py` 20 + `test_wrapper.py` 4; M2 = `test_env.py` 17 +
 Lukas's 1.
+
+### 2026-11-07 — 4.harness: one lane script for agy and Claude Code (`harness/new_lane.sh`)
+**Goal:** Brent runs the harness in Claude Code with exactly the same steps, files and prompt as Lukas in agy.
+**What changed:** new `CAD/harness/new_lane.sh` (branch `best_harnass`). Usage from `CAD/`:
+`bash harness/new_lane.sh ~/harness_lanes/<name> [SEED]`, then `cd` there, start agy or claude (the script prints
+both commands), paste `harness/session_prompt.md`.
+**How it works:**
+1. rsync of `CAD/` without runs, results, transcripts and tests;
+2. `.agents/mcp_config.json` (agy) and `.mcp.json` (Claude Code) point at the lane's `mcp_server.py` with the seed;
+3. for Claude Code, the same harness where Claude Code looks for it: `CLAUDE.md` = `@AGENTS.md` (an import),
+   `.claude/skills` = copy of `.agents/skills`, `.claude/agents/{tutor,reviewer}.md` = the agy files with
+   `tools: [view_file]` replaced by `Read, Glob, Grep, Skill` + the 4 cad tools.
+**Decisions:** generated at lane time instead of committed copies, so the agy files stay the single source and can't
+drift; `.claude/` is excluded from git anyway. Model `claude-sonnet-4-6` in both, for comparability. Claude Code
+gets no Bash/Write/Edit/web (`--tools`), only this lane's `cad` server (`--strict-mcp-config`), and can't read the
+repo (`--disallowedTools Read(//<repo>/**)`).
+**Verification:** test lane in the scratchpad: a Haiku `claude -p` in it lists the subagents `tutor` and `reviewer`,
+the skills `opamp-design` and `rl-tutoring`, the 4 `cad` tools and AGENTS.md's title. pytest 75 passed.
+**For Brent to check:** the subagent flow itself (main → tutor → reviewer) hasn't run end to end yet, in either tool.
