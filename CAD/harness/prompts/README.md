@@ -1,5 +1,9 @@
 # The session prompts of the RL → LLM → RL flow
 
+Since the final run, this flow is also the tutor's own prompt (`.agents/agents/tutor.md`), so the final agy run
+needs only `../session_prompt.md` (main agent → tutor → reviewer, with subagents). The prompts below are the
+evaluated variants: they override the tutor's steps of that time and play every role in one conversation.
+
 | file | what it is |
 |---|---|
 | `rl_first_evaluated.txt` | **the exact prompt of the evaluation runs** on the unseen seeds 3, 4, 5 (`../sessions/2026-11-06_eval-rl-first-seeds345/`), copied byte for byte from the sessions' transcripts (identical in all three) |

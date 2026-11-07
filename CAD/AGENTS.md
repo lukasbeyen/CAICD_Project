@@ -1,9 +1,9 @@
-# Opamp sizing harness: the LLM tutors the RL
+# Opamp sizing harness: RL, then the LLM, then the RL again
 
 Goal: size the two-stage Miller opamp so that all hard specs are met and area and supply current are as low as
-possible, with **strictly fewer than 200 simulations** in total (count them with `simulator_calls`;
-nothing else stops you). The LLM gives the RL a good start: a hand design from the equations, around which the
-RL's warm-up explores. Then TD3 trains, and the LLM refines the best design.
+possible, with **about 2100 simulations** in total (see `simulator_calls`). TD3 first learns from
+scratch; the LLM then refines its best design with the equations; a second warm-up and training search near
+it, and the LLM decides whether a last refinement can still help.
 
 | spec | target | kind |
 |---|---|---|

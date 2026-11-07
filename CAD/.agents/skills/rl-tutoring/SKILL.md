@@ -7,7 +7,8 @@ description: How the course's RL tools work (simulate, warmup around the best de
   [−1, 1]); its state is the normalized specs of the last design. It learns from its replay buffer.
 - **`simulate`** doesn't enter the buffer, but it decides where the warm-up explores. `warmup` draws its random
   actions around **the best design measured so far** (by reward), with TD3's exploration noise σ 0.1. When a warm-up
-  design is better, the centre moves there: a random local search around your design.
+  design is better, the centre moves there: a random local search around your design. Before your first `simulate`,
+  the warm-up is uniformly random over the whole grid.
 - **How far σ 0.1 moves a parameter**, per draw:
   - multiplicities (24 values): about ±1 finger, sometimes 2;
   - widths (11 values): one step in ≈ 30 % of the draws;
@@ -23,15 +24,15 @@ description: How the course's RL tools work (simulate, warmup around the best de
 - **Episodes** last 10 steps. Every reset is a uniformly random design: one simulation, usually far worse; it moves
   the centre only if it's better.
 - **`train(n)`:** TD3 learns from every transition (one update per step). It needs ≥ 100 transitions (batch 100), so
-  `warmup(100)` first. Before its first step, the actor is pulled to the best design (no simulation), so TD3 starts
-  at your design and searches locally, where its critics learned from the warm-up. A reset costs one random
-  simulation, but the next design is again near the best.
-- **Budget** (strictly < 200, by rule): the nominal + fixes ≤ 6, `warmup(100)` ≈ 110, `train` 40–60 (+ resets),
-  refining ≤ 10: ≈ 180–190 in total.
-- **Refining after the RL** (`get_status(5)`, then `simulate` with all 20 values):
+  `warmup(100)` first. Once you have simulated a design, `train` first pulls the actor to the best design (no
+  simulation), so TD3 starts at your design and searches locally, where its critics learned from the warm-up. A
+  reset costs one random simulation, but the next design is again near the best.
+- **Budget** (about 2100): RL 1 `warmup(100)` + `train(800)` ≈ 990 with the resets, refining ≤ 5, RL 2
+  `warmup(200)` + `train(800)` ≈ 1100, ≤ 3 last refinements.
+- **Refining after the RL** (`get_status(10)`, then `simulate` with all 20 values):
   - the margin of each hard spec = (y − y*)/y* (reversed for noise). The RL stops where a spec just passes; a spec
     with < 3 % margin is binding, and a current or area cut that costs it fails. First buy it headroom with another
     spec's margin (e.g. PM → Cc ↓ for UGBW), or step only on parameters that don't move it;
-  - the sensitivities from your nominal don't hold at the best: probe single steps first, then combine;
+  - the sensitivities change from design to design: probe single steps first, then combine;
   - a coupled move that keeps the mirror balance (mn4, mn5 and mp3 together), which random noise rarely finds;
   - a step that spends a spec's margin (e.g. PM headroom on area via Cc).

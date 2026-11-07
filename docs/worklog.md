@@ -2717,3 +2717,61 @@ be marked as in `td3/agent.py`.
 
 **Solutions/:** Brent chose Lukas's own best run. It is not in the repo, so it waits for Lukas's files. Then: check
 that its front lies within 5000 sims, make the `wrdata` paths portable, re-simulate, add it.
+
+### 2026-11-07 — report: `report_draft.tex` (all four milestones, in the template's style)
+**Goal:** Brent: write the report as a separate LaTeX file in the style of `template.tex` (Lukas has started
+milestone 1), following the PDF's "What to Report". Pictures we don't have: placeholders. Missing references: Brent
+fixes them.
+
+**What:** `report_draft.tex` (repo root, next to the untracked `template.tex`):
+- the template's preamble plus `graphicx`, `booktabs`, `multirow`;
+- Lukas's M1 text unchanged, completed with the parameter table, the netlist completion, noise, current, area,
+  robustness and the unit tests;
+- M2: action refinement, normalization, the FoM, reset/step, the tests;
+- M3: TD3, the loop, the tuning table, results and baseline. Placeholders for **Lukas's best run** (Brent's choice:
+  plots, baseline and Solutions/ all from his run);
+- M4: the task breakdown (main → tutor → reviewer), the MCP tools incl. our two additions, the skills, context and
+  memory, the RL → LLM → RL flow, results, the best solution, explainability (real reason strings of the agy seed-3
+  run), the runtime vs TD3 table (computed from the records), and the development (v1).
+
+The M4 numbers are marked provisional: Brent and Lukas will replace them with Lukas's final agy run. Conventions:
+`\missingfigure` for figures, `\textbf{TBD}`/`\todo` + `% REPLACE` for missing numbers.
+
+**Verification:** no LaTeX in the VM, so not compiled. Checked by script: balanced braces and `$`, matched
+`\begin`/`\end`, ASCII only. ≈ 4000 words + 6 tables + 4 figures ≈ the 10-page limit.
+
+**Open:** `AGENTS.md`/`tutor.md` still describe the old LLM-first < 200-sim flow; the report describes RL → LLM → RL
+as the tutor's job. Align them before Lukas's final run.
+
+### 2026-11-07 10:38 — M4: the harness files describe the final RL → LLM → RL flow (for Lukas's final agy run)
+**Goal:** Lukas's final agy run uses the harness the report describes: main agent → `tutor` → `reviewer`, the
+tutor running RL → LLM → RL. Until now the flow lived only in `harness/prompts/rl_first_final*.txt`, which
+overrode the tutor's old LLM-first < 200-simulation steps.
+
+**What changed** (branch `best_harnass`; no code, tool or server change):
+- `CAD/AGENTS.md`: title and goal paragraph → RL first, the LLM refines, RL again, about 2100 simulations
+  (1991 B, the test limit is 2000).
+- `CAD/.agents/agents/tutor.md`: the steps of `rl_first_final.txt`: `warmup(100)` + `train(800)`, `get_status(10)`
+  + ≤ 5 iterative `simulate`, `warmup(200)` + `train(800)`, a judgement stop or ≤ 3 refinements, ≤ 80-word return
+  with the simulations per phase.
+- `CAD/.agents/agents/reviewer.md`: `get_status(10)`, changes relative to the first RL's best, cost per phase.
+- `CAD/.agents/skills/rl-tutoring/SKILL.md`: the budget split (≈ 990 + ≤ 5 + ≈ 1100 + ≤ 3); `get_status(10)`;
+  two facts made exact against `sizing_tools.py`: before the first `simulate` the warm-up is uniform
+  (`_warmup_action`), and the warm start only happens once a design was simulated (`_warm_start`).
+- `CAD/harness/session_prompt.md`: "Do not edit, write or commit any files." in front.
+- `CAD/harness/README.md`: the new flow, the full agy command, the seed and `timeoutSeconds` notes.
+  `harness/prompts/README.md`: the `rl_first_*` prompts are the evaluated variants.
+
+**Decisions:** general wording only (no values from our runs). Kept the subagent pipeline, so the run matches the
+report's architecture.
+
+**Verification:** pytest 135 passed (incl. the byte limits and name checks in `test_harness_files.py`).
+
+**For Brent to check / open questions:** the subagent version of this flow hasn't been run; the tested 0.705
+(agy seed 3) played every role in one conversation. If Lukas's tokens are tight, `rl_first_final_agy.txt` is the
+tested fallback.
+
+### 2026-11-07 — push of the harness alignment; the LaTeX files stay local
+Brent: the LaTeX files (`report_draft.tex`, `template.tex`) stay local with him, never in the repo. The two
+unpushed local commits were rebuilt into one without `report_draft.tex` (soft reset to `origin/best_harnass`
+`9c9e72c`; nothing pushed was rewritten). Both files are in `.git/info/exclude`. Pushed to `best_harnass`.
