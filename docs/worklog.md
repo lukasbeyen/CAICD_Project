@@ -2874,3 +2874,33 @@ figures (made with `CAD/analysis/`), `../Solutions/` (portable paths), the READM
 clean-up comes after his runs. The final_CAD commit was taken off `best_harnass` (unpushed, `git reset --mixed`);
 it lives on as the local folder `final_CAD/` (in `.git/info/exclude`) and the local branch `final_cad_snapshot`
 (`b81ae5e`). Lukas's runs therefore go through `CAD/` (which also writes designs.csv).
+
+### 2026-11-07 evening — 4.x: Lukas's agy run had no simulator; a pre-flight check
+**Goal:** find out why Lukas's agy session had no `cad` tools (and burned tokens), and stop it happening again.
+
+**What changed:**
+- Pulled `best_harnass` → f476411 (Lukas). It has no run output, only two edits:
+  - `CAD/harness/BEST_RUNS.md` was deleted (nothing references it; it stays in the git history);
+  - `CAD/circuit_env.py` step 9: `if self.env_steps % 10 == 0` became `if self.env_steps % self.episode_steps == 0`.
+- New, not committed yet: `CAD/harness/check_mcp.py`. It starts the `cad` server exactly as `.agents/mcp_config.json`
+  says (command, args, cwd, PATH), lists the tools and calls `get_status`. No simulation and no LLM tokens.
+
+**How it works / the likely cause:**
+- The committed `CAD/.agents/mcp_config.json` has the VM paths (`/home/brentvm/...`). On Lukas's laptop that python
+  doesn't exist, so agy can't start the server. The session then runs with no `cad` tools, and the model keeps
+  looking for a way to simulate.
+- Other possible causes the check also catches: a venv without `mcp` 2.x (`from mcp.server import MCPServer` fails;
+  needs Python ≥ 3.10), or a lane made without `PYTHON=` when his venv isn't `../.venv`.
+- Tested in a scratchpad lane: correct config → `OK` with the 4 tools; a missing python → `FAIL: ... does not exist`;
+  a python without `mcp` → the server's `ModuleNotFoundError` is printed.
+
+**Lukas's circuit_env change is a bug:**
+- `episode_steps` is 1..10, so `env_steps % episode_steps == 0` is always true at steps 1, 2, 5 and 10 of each
+  episode, and sometimes at others.
+- The effect: `score_history` gets partial scores several times per episode (the average-score plot is wrong), and
+  `plotLearning` runs several times per episode.
+- `test_env.py::test_episode_ends_after_10_steps` fails on it (1 failed, 74 passed).
+
+**For Brent to check:** revert step 9 to `% 10` (ask Lukas what he wanted). Commit and push `check_mcp.py` only after
+asking.
+- **Done (Brent's go):** step 9 reverted to `% 10` (75 passed); `circuit_env.py` + `check_mcp.py` committed as 49e54f5 and pushed.
