@@ -1,0 +1,10 @@
+# The packages this project imports (tested with the versions in the comments, Python 3.14, CPU only).
+numpy        # 2.5.4
+scipy        # 1.18.1
+pandas       # 3.1.0
+matplotlib   # 3.11.2
+pyyaml       # 6.0.3
+gymnasium    # 1.4.0
+torch        # 2.10.0 (CPU)
+pytest       # 9.2.0
+mcp          # 2.3.0, only for the LLM harness (mcp_server.py); needs Python >= 3.10
